@@ -1,68 +1,123 @@
 #!/bin/bash
 
 # =================================================================
-# OLLAMA MIDDLEWARE - SELF-CONTAINED INSTALLER
-# Installs everything into /opt/ollama-middleware
+# OLLAMA MIDDLEWARE - UNIVERSAL INSTALLER
+# Works on: Linux (Debian/Ubuntu) & macOS
 # =================================================================
 
 set -e
-APP_DIR="/opt/ollama-middleware"
-USER="root" # Running OpenResty as root to avoid permission headaches with logs
 
-# 1. Install Dependencies (OpenResty)
-echo "Installing OpenResty..."
-if ! command -v openresty &> /dev/null; then
-    sudo apt-get update
-    sudo apt-get -y install --no-install-recommends wget gnupg ca-certificates lsb-release
-    wget -O - https://openresty.org/package/pubkey.gpg | sudo gpg --dearmor -o /usr/share/keyrings/openresty.gpg
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openresty.gpg] http://openresty.org/package/ubuntu $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/openresty.list > /dev/null
-    sudo apt-get update
-    sudo apt-get -y install openresty
+# Detect OS
+OS="$(uname -s)"
+echo "🖥️  Detected OS: $OS"
+
+if [ "$OS" == "Linux" ]; then
+    # --- LINUX SETTINGS ---
+    if [ "$EUID" -ne 0 ]; then 
+        echo "❌ Please run as root (sudo ./install.sh) on Linux."
+        exit 1
+    fi
+    
+    INSTALL_DIR="/opt/ollama-middleware"
+    NGINX_BIN="/usr/bin/openresty"
+    MIME_TYPES="/usr/local/openresty/nginx/conf/mime.types"
+    USER_OWNER="root"
+    GROUP_OWNER="root"
+    
+elif [ "$OS" == "Darwin" ]; then
+    # --- MACOS SETTINGS ---
+    if ! command -v brew &> /dev/null; then
+        echo "❌ Homebrew is required. Install it at https://brew.sh/"
+        exit 1
+    fi
+    
+    INSTALL_DIR="$HOME/ollama-middleware"
+    NGINX_BIN="$(brew --prefix openresty)/bin/openresty"
+    MIME_TYPES="$(brew --prefix)/etc/openresty/mime.types"
+    USER_OWNER="$USER"
+    GROUP_OWNER="staff" # Default group for mac users usually
+    
+else
+    echo "❌ Unsupported OS: $OS"
+    exit 1
 fi
 
-# 2. Prepare Directory Structure
-echo "Setting up $APP_DIR..."
-# Stop service if exists
-sudo systemctl stop ollama-middleware 2>/dev/null || true
+# =================================================================
+# 1. Install Dependencies
+# =================================================================
+echo "📦 Installing Dependencies..."
 
-sudo mkdir -p "$APP_DIR/conf"
-sudo mkdir -p "$APP_DIR/lua"
-sudo mkdir -p "$APP_DIR/html"
-sudo mkdir -p "$APP_DIR/logs"
+if [ "$OS" == "Linux" ]; then
+    if ! command -v openresty &> /dev/null; then
+        apt-get update
+        apt-get -y install --no-install-recommends wget gnupg ca-certificates lsb-release
+        wget -O - https://openresty.org/package/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/openresty.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openresty.gpg] http://openresty.org/package/ubuntu $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/openresty.list > /dev/null
+        apt-get update
+        apt-get -y install openresty
+    fi
+elif [ "$OS" == "Darwin" ]; then
+    if ! command -v openresty &> /dev/null; then
+        brew install openresty
+    fi
+fi
 
-# Set permissions
-sudo chown -R $USER:$USER "$APP_DIR"
-sudo chmod -R 755 "$APP_DIR"
-# Logs need to be writable
-sudo chmod -R 777 "$APP_DIR/logs"
-sudo touch "$APP_DIR/logs/metrics.log"
-sudo chmod 666 "$APP_DIR/logs/metrics.log"
+# =================================================================
+# 2. Setup Directories
+# =================================================================
+echo "📂 Setting up directories in $INSTALL_DIR..."
+
+# Stop existing services
+if [ "$OS" == "Linux" ]; then
+    systemctl stop ollama-middleware 2>/dev/null || true
+elif [ "$OS" == "Darwin" ]; then
+    launchctl unload "$HOME/Library/LaunchAgents/uk.drascom.ollama-middleware.plist" 2>/dev/null || true
+fi
+
+mkdir -p "$INSTALL_DIR/conf"
+mkdir -p "$INSTALL_DIR/lua"
+mkdir -p "$INSTALL_DIR/html"
+mkdir -p "$INSTALL_DIR/logs"
+
+# Reset permissions
+chown -R "$USER_OWNER:$GROUP_OWNER" "$INSTALL_DIR"
+chmod -R 755 "$INSTALL_DIR"
+chmod -R 777 "$INSTALL_DIR/logs" # Ensure logs are writable
+
+# Create log files
+touch "$INSTALL_DIR/logs/metrics.log"
+touch "$INSTALL_DIR/logs/access.log"
+touch "$INSTALL_DIR/logs/error.log"
+chmod 666 "$INSTALL_DIR/logs/"*.log
 
 # =================================================================
 # 3. Write Config (nginx.conf)
 # =================================================================
-echo "Writing configuration..."
+echo "📝 Writing Nginx config..."
 
-cat <<EOF | sudo tee "$APP_DIR/conf/nginx.conf" > /dev/null
+# Determine 'user' directive (Linux needs it, macOS ignores it if non-root)
+USER_DIRECTIVE=""
+if [ "$OS" == "Linux" ]; then
+    USER_DIRECTIVE="user $USER_OWNER;"
+fi
+
+cat <<EOF > "$INSTALL_DIR/conf/nginx.conf"
 worker_processes 1;
-# Run in foreground for systemd
 daemon off;
-# User needs to match folder owner
-user $USER;
+$USER_DIRECTIVE
 
 events { worker_connections 1024; }
 
 http {
-    include /usr/local/openresty/nginx/conf/mime.types;
+    include $MIME_TYPES;
     default_type application/octet-stream;
     
-    # Paths are relative to prefix (-p) passed in systemd
     access_log logs/access.log;
     error_log logs/error.log warn;
 
     client_body_buffer_size 10m;
     client_max_body_size 20m;
-    lua_package_path "$APP_DIR/lua/?.lua;;";
+    lua_package_path "$INSTALL_DIR/lua/?.lua;;";
 
     server {
         listen 11435;
@@ -99,12 +154,12 @@ http {
 EOF
 
 # =================================================================
-# 4. Write Lua Scripts
+# 4. Write Lua Scripts (Unified Logic)
 # =================================================================
-echo "Writing Lua scripts..."
+echo "📝 Writing Lua scripts..."
 
 # --- request.lua ---
-cat <<'EOF' | sudo tee "$APP_DIR/lua/request.lua" > /dev/null
+cat <<'EOF' > "$INSTALL_DIR/lua/request.lua"
 local uri = ngx.var.uri or ""
 if not (uri:find("/api/chat") or uri:find("/api/generate")) then return end
 
@@ -152,7 +207,7 @@ ngx.ctx.ollama = {
 EOF
 
 # --- response.lua ---
-cat <<'EOF' | sudo tee "$APP_DIR/lua/response.lua" > /dev/null
+cat <<'EOF' > "$INSTALL_DIR/lua/response.lua"
 local ctx = ngx.ctx.ollama
 if not ctx then return end
 local cjson = require "cjson.safe"
@@ -206,7 +261,8 @@ end
 EOF
 
 # --- log.lua ---
-cat <<'EOF' | sudo tee "$APP_DIR/lua/log.lua" > /dev/null
+# Needs variable substitution for path
+cat <<EOF > "$INSTALL_DIR/lua/log.lua"
 local ctx = ngx.ctx.ollama
 if not ctx then return end
 local cjson = require "cjson.safe"
@@ -223,14 +279,14 @@ local line = string.format(
     prompt_safe, response_safe, num(ctx.completion_tokens), num(ctx.eval_ms), val(ctx.tps)
 )
 
-local f, err = io.open("/opt/ollama-middleware/logs/metrics.log", "a")
+local f, err = io.open("$INSTALL_DIR/logs/metrics.log", "a")
 if f then f:write(line .. "\n"); f:close() end
 EOF
 
 # --- metrics_json.lua ---
-cat <<'EOF' | sudo tee "$APP_DIR/lua/metrics_json.lua" > /dev/null
+cat <<EOF > "$INSTALL_DIR/lua/metrics_json.lua"
 local cjson = require "cjson.safe"
-local f = io.open("/opt/ollama-middleware/logs/metrics.log", "r")
+local f = io.open("$INSTALL_DIR/logs/metrics.log", "r")
 local logs = {}
 if f then
     local lines = {}
@@ -259,19 +315,18 @@ ngx.say(cjson.encode(logs))
 EOF
 
 # --- clear_logs.lua ---
-cat <<'EOF' | sudo tee "$APP_DIR/lua/clear_logs.lua" > /dev/null
-local f = io.open("/opt/ollama-middleware/logs/metrics.log", "w")
+cat <<EOF > "$INSTALL_DIR/lua/clear_logs.lua"
+local f = io.open("$INSTALL_DIR/logs/metrics.log", "w")
 if f then f:write(""); f:close() end
 ngx.header.content_type = "application/json"
 ngx.say('{"status": "ok"}')
 EOF
 
 # =================================================================
-# 5. Write HTML Dashboard
+# 5. Write HTML UI
 # =================================================================
-echo "Writing UI..."
-
-cat <<'HTML_END' | sudo tee "$APP_DIR/html/index.html" > /dev/null
+echo "📝 Writing UI..."
+cat <<'HTML_END' > "$INSTALL_DIR/html/index.html"
 <!doctype html>
 <html lang="en">
 <head>
@@ -279,7 +334,7 @@ cat <<'HTML_END' | sudo tee "$APP_DIR/html/index.html" > /dev/null
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     :root { --bg:#0e0f12; --text:#d7dce2; --accent:#4ade80; --border:#232633; }
-    body { margin:0; background:var(--bg); color:var(--text); font-family:sans-serif; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     header { padding:14px; border-bottom:1px solid var(--border); background:#0c0e13; display:flex; justify-content:space-between; align-items:center; }
     input, button { background:#101217; border:1px solid var(--border); color:var(--text); padding:8px; border-radius:6px; }
     table { width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }
@@ -310,7 +365,6 @@ cat <<'HTML_END' | sudo tee "$APP_DIR/html/index.html" > /dev/null
       const q=document.getElementById("q").value.toLowerCase();
       const openSet=new Set();
       document.querySelectorAll('.open').forEach(r=>openSet.add(r.id));
-      
       const rows=all.filter(x=>!q||JSON.stringify(x).toLowerCase().includes(q));
       document.querySelector("tbody").innerHTML=rows.map(x=>{
         let ts=x.ts.split("T")[1]||x.ts; 
@@ -343,19 +397,20 @@ cat <<'HTML_END' | sudo tee "$APP_DIR/html/index.html" > /dev/null
 HTML_END
 
 # =================================================================
-# 6. Create Systemd Service
+# 6. Service Installation
 # =================================================================
-echo "Creating systemd service..."
 
-cat <<EOF | sudo tee /etc/systemd/system/ollama-middleware.service > /dev/null
+if [ "$OS" == "Linux" ]; then
+    echo "🐧 Installing Systemd Service..."
+    cat <<EOF > /etc/systemd/system/ollama-middleware.service
 [Unit]
 Description=Ollama Middleware Metrics
 After=network.target ollama.service
 
 [Service]
 Type=forking
-PIDFile=$APP_DIR/logs/nginx.pid
-ExecStart=/usr/bin/openresty -p $APP_DIR -c conf/nginx.conf
+PIDFile=$INSTALL_DIR/logs/nginx.pid
+ExecStart=$NGINX_BIN -p $INSTALL_DIR -c conf/nginx.conf
 ExecReload=/bin/kill -s HUP \$MAINPID
 ExecStop=/bin/kill -s QUIT \$MAINPID
 PrivateTmp=true
@@ -364,14 +419,48 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
+    systemctl daemon-reload
+    systemctl enable ollama-middleware
+    systemctl restart ollama-middleware
 
-# 7. Start
-echo "Starting service..."
-sudo systemctl daemon-reload
-sudo systemctl enable ollama-middleware
-sudo systemctl restart ollama-middleware
+elif [ "$OS" == "Darwin" ]; then
+    echo "🍏 Installing LaunchAgent..."
+    LAUNCH_AGENT="$HOME/Library/LaunchAgents/uk.drascom.ollama-middleware.plist"
+    cat <<EOF > "$LAUNCH_AGENT"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>uk.drascom.ollama-middleware</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$NGINX_BIN</string>
+        <string>-p</string>
+        <string>$INSTALL_DIR</string>
+        <string>-c</string>
+        <string>conf/nginx.conf</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardErrorPath</key>
+    <string>$INSTALL_DIR/logs/launch-error.log</string>
+    <key>StandardOutPath</key>
+    <string>$INSTALL_DIR/logs/launch-out.log</string>
+</dict>
+</plist>
+EOF
+    launchctl load "$LAUNCH_AGENT"
+fi
 
 echo "====================================================="
-echo "✅ INSTALLED in $APP_DIR"
-echo "➡️  UI: http://$(hostname -I | awk '{print $1}'):11435/metrics/"
+echo "✅ Installation Complete!"
+if [ "$OS" == "Linux" ]; then
+    IP=$(hostname -I | awk '{print $1}')
+    echo "➡️  UI: http://$IP:11435/metrics/"
+else
+    echo "➡️  UI: http://localhost:11435/metrics/"
+fi
 echo "====================================================="
