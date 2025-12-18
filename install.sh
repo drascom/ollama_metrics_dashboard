@@ -7,6 +7,11 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SRC_CONF="$SCRIPT_DIR/conf"
+SRC_LUA="$SCRIPT_DIR/lua"
+SRC_HTML="$SCRIPT_DIR/html"
+
 # Detect OS
 OS="$(uname -s)"
 echo "🖥️  Detected OS: $OS"
@@ -32,8 +37,6 @@ elif [ "$OS" == "Darwin" ]; then
     fi
     
     INSTALL_DIR="$HOME/ollama-middleware"
-    NGINX_BIN="$(brew --prefix openresty)/bin/openresty"
-    MIME_TYPES="$(brew --prefix)/etc/openresty/mime.types"
     USER_OWNER="$USER"
     GROUP_OWNER="staff" # Default group for mac users usually
     
@@ -57,9 +60,13 @@ if [ "$OS" == "Linux" ]; then
         apt-get -y install openresty
     fi
 elif [ "$OS" == "Darwin" ]; then
-    if ! command -v openresty &> /dev/null; then
-        brew install openresty
+    brew tap openresty/brew >/dev/null
+    if ! brew list openresty/brew/openresty &> /dev/null; then
+        brew install openresty/brew/openresty
     fi
+    OPENRESTY_PREFIX="$(brew --prefix openresty/brew/openresty)"
+    NGINX_BIN="$OPENRESTY_PREFIX/bin/openresty"
+    MIME_TYPES="$OPENRESTY_PREFIX/nginx/conf/mime.types"
 fi
 
 # =================================================================
@@ -91,7 +98,14 @@ touch "$INSTALL_DIR/logs/error.log"
 chmod 666 "$INSTALL_DIR/logs/"*.log
 
 # =================================================================
-# 3. Write Config (nginx.conf)
+# 3. Copy Runtime Assets
+# =================================================================
+echo "📝 Copying runtime assets..."
+cp -R "$SRC_LUA/." "$INSTALL_DIR/lua/"
+cp -R "$SRC_HTML/." "$INSTALL_DIR/html/"
+
+# =================================================================
+# 4. Write Config (nginx.conf)
 # =================================================================
 echo "📝 Writing Nginx config..."
 
@@ -101,303 +115,11 @@ if [ "$OS" == "Linux" ]; then
     USER_DIRECTIVE="user $USER_OWNER;"
 fi
 
-cat <<EOF > "$INSTALL_DIR/conf/nginx.conf"
-worker_processes 1;
-daemon off;
-$USER_DIRECTIVE
-
-events { worker_connections 1024; }
-
-http {
-    include $MIME_TYPES;
-    default_type application/octet-stream;
-    
-    access_log logs/access.log;
-    error_log logs/error.log warn;
-
-    client_body_buffer_size 10m;
-    client_max_body_size 20m;
-    lua_package_path "$INSTALL_DIR/lua/?.lua;;";
-
-    server {
-        listen 11435;
-        
-        # Dashboard UI
-        location = /metrics { return 301 /metrics/; }
-        location /metrics/ {
-            alias html/;
-            index index.html;
-        }
-        location = /metrics.json {
-            default_type application/json;
-            content_by_lua_file lua/metrics_json.lua;
-        }
-        location = /clear {
-            default_type application/json;
-            content_by_lua_file lua/clear_logs.lua;
-        }
-
-        # Ollama Proxy
-        location / {
-            proxy_pass http://127.0.0.1:11434;
-            proxy_http_version 1.1;
-            proxy_buffering off;
-            proxy_request_buffering off;
-            lua_need_request_body on;
-
-            access_by_lua_file lua/request.lua;
-            body_filter_by_lua_file lua/response.lua;
-            log_by_lua_file lua/log.lua;
-        }
-    }
-}
-EOF
+perl -pe "s#@@USER_DIRECTIVE@@#$USER_DIRECTIVE#g; s#@@MIME_TYPES@@#$MIME_TYPES#g" \
+    "$SRC_CONF/nginx.conf.template" > "$INSTALL_DIR/conf/nginx.conf"
 
 # =================================================================
-# 4. Write Lua Scripts (Unified Logic)
-# =================================================================
-echo "📝 Writing Lua scripts..."
-
-# --- request.lua ---
-cat <<'EOF' > "$INSTALL_DIR/lua/request.lua"
-local uri = ngx.var.uri or ""
-if not (uri:find("/api/chat") or uri:find("/api/generate")) then return end
-
-ngx.req.read_body()
-local body = ngx.req.get_body_data()
-if not body then
-    local body_file = ngx.req.get_body_file()
-    if body_file then
-        local f = io.open(body_file, "r")
-        if f then body = f:read("*a"); f:close() end
-    end
-end
-
-local model, stream, prompt = "unknown", "true", ""
-local rid = string.format("%d-%d-%d", ngx.time(), ngx.worker.pid(), ngx.var.connection or 0)
-
-if body and body ~= "" then
-  local cjson = require "cjson.safe"
-  local req = cjson.decode(body)
-  if req then
-    if req.model then model = req.model end
-    if req.stream == false then stream = "false" end
-    
-    if req.prompt then 
-      prompt = tostring(req.prompt)
-    elseif req.messages and type(req.messages) == "table" then
-      -- Chat: Get LAST message only (User or Tool Output)
-      local count = #req.messages
-      if count > 0 then
-        local last = req.messages[count]
-        if last.content then
-           prompt = string.format("[%s]: %s", last.role or "?", last.content)
-        end
-      end
-    end
-  end
-end
-
-if #prompt > 200 then prompt = prompt:sub(1, 200) .. "..." end
-
-ngx.ctx.ollama = {
-  rid=rid, start_ms=ngx.now()*1000, client_ip=ngx.var.remote_addr,
-  uri=uri, model=model, stream=stream, prompt=prompt
-}
-EOF
-
-# --- response.lua ---
-cat <<'EOF' > "$INSTALL_DIR/lua/response.lua"
-local ctx = ngx.ctx.ollama
-if not ctx then return end
-local cjson = require "cjson.safe"
-
-ctx.partial = ctx.partial or ""
-ctx.got_done = ctx.got_done or false
-ctx.response_text = ctx.response_text or ""
-local chunk = ngx.arg[1] or ""
-local eof = ngx.arg[2]
-
-if chunk ~= "" then ctx.partial = ctx.partial .. chunk end
-
-local function process(json_str)
-    local obj = cjson.decode(json_str)
-    if not obj then return end
-    
-    local txt = ""
-    if obj.response then txt = obj.response
-    elseif obj.message then
-        if obj.message.content then txt = obj.message.content
-        elseif obj.message.tool_calls then txt = " [Tool Call] " end
-    end
-    
-    if #ctx.response_text < 4000 then ctx.response_text = ctx.response_text .. txt end
-    
-    if obj.done == true and not ctx.got_done then
-        ctx.got_done = true
-        ctx.res_model = obj.model or ctx.model
-        ctx.completion_tokens = tonumber(obj.eval_count) or 0
-        ctx.eval_ns = tonumber(obj.eval_duration) or 0
-        local dur_sec = ctx.eval_ns / 1e9
-        if dur_sec > 0 then
-             ctx.tps = string.format("%.2f", ctx.completion_tokens / dur_sec)
-             ctx.eval_ms = math.floor(ctx.eval_ns / 1e6)
-        else ctx.tps = "0.00"; ctx.eval_ms = 0 end
-    end
-end
-
-while true do
-    local nl = ctx.partial:find("\n", 1, true)
-    if not nl then break end
-    local line = ctx.partial:sub(1, nl - 1)
-    ctx.partial = ctx.partial:sub(nl + 1)
-    if line ~= "" then process(line) end
-end
-
-if eof then
-    if ctx.partial ~= "" then process(ctx.partial) end
-    ctx.partial = nil
-end
-EOF
-
-# --- log.lua ---
-# Needs variable substitution for path
-cat <<EOF > "$INSTALL_DIR/lua/log.lua"
-local ctx = ngx.ctx.ollama
-if not ctx then return end
-local cjson = require "cjson.safe"
-local function val(v) return v or "-" end
-local function num(v) return v or 0 end
-
-local prompt_safe = cjson.encode(val(ctx.prompt))
-local response_safe = cjson.encode(val(ctx.response_text))
-local timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
-
-local line = string.format(
-    "ts=%s rid=%s ip=%s model=%s uri=%s stream=%s prompt=%s response=%s completion=%d ms=%d tps=%s",
-    timestamp, val(ctx.rid), val(ctx.client_ip), val(ctx.model), val(ctx.uri), val(ctx.stream),
-    prompt_safe, response_safe, num(ctx.completion_tokens), num(ctx.eval_ms), val(ctx.tps)
-)
-
-local f, err = io.open("$INSTALL_DIR/logs/metrics.log", "a")
-if f then f:write(line .. "\n"); f:close() end
-EOF
-
-# --- metrics_json.lua ---
-cat <<EOF > "$INSTALL_DIR/lua/metrics_json.lua"
-local cjson = require "cjson.safe"
-local f = io.open("$INSTALL_DIR/logs/metrics.log", "r")
-local logs = {}
-if f then
-    local lines = {}
-    for line in f:lines() do table.insert(lines, line) end
-    f:close()
-    for i = #lines, math.max(1, #lines - 50), -1 do
-        local line = lines[i]
-        local entry = {}
-        entry.ts = line:match("ts=(%S+)")
-        entry.rid = line:match("rid=(%S+)")
-        entry.ip = line:match("ip=(%S+)")
-        entry.model = line:match("model=(%S+)")
-        entry.uri = line:match("uri=(%S+)")
-        entry.completion = line:match("completion=(%S+)")
-        entry.ms = line:match("ms=(%S+)")
-        entry.tps = line:match("tps=(%S+)")
-        local raw_p = line:match("prompt=(%b\"\")")
-        local raw_r = line:match("response=(%b\"\")")
-        if raw_p then entry.prompt = cjson.decode(raw_p) else entry.prompt="" end
-        if raw_r then entry.response = cjson.decode(raw_r) else entry.response="" end
-        if entry.ts then table.insert(logs, entry) end
-    end
-end
-ngx.header.content_type = "application/json"
-ngx.say(cjson.encode(logs))
-EOF
-
-# --- clear_logs.lua ---
-cat <<EOF > "$INSTALL_DIR/lua/clear_logs.lua"
-local f = io.open("$INSTALL_DIR/logs/metrics.log", "w")
-if f then f:write(""); f:close() end
-ngx.header.content_type = "application/json"
-ngx.say('{"status": "ok"}')
-EOF
-
-# =================================================================
-# 5. Write HTML UI
-# =================================================================
-echo "📝 Writing UI..."
-cat <<'HTML_END' > "$INSTALL_DIR/html/index.html"
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"><title>Ollama Middleware</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    :root { --bg:#0e0f12; --text:#d7dce2; --accent:#4ade80; --border:#232633; }
-    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    header { padding:14px; border-bottom:1px solid var(--border); background:#0c0e13; display:flex; justify-content:space-between; align-items:center; }
-    input, button { background:#101217; border:1px solid var(--border); color:var(--text); padding:8px; border-radius:6px; }
-    table { width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }
-    th, td { padding:10px; text-align:left; border-bottom:1px solid var(--border); }
-    tr.data-row:hover { background:rgba(255,255,255,0.05); cursor:pointer; }
-    tr.details-row { display:none; background:rgba(0,0,0,0.3); }
-    tr.details-row.open { display:table-row; }
-    pre { white-space:pre-wrap; max-height:200px; overflow:auto; background:rgba(0,0,0,0.4); padding:10px; }
-  </style>
-</head>
-<body>
-  <header>
-    <b>Ollama Metrics</b>
-    <div style="display:flex;gap:10px">
-      <input id="q" placeholder="Filter..." oninput="render()">
-      <button onclick="clearLogs()" style="color:#ef4444">Clear</button>
-      <button id="liveBtn" onclick="toggle()">Live</button>
-    </div>
-  </header>
-  <div style="padding:15px">
-    <table id="t"><thead><tr><th>Time</th><th>Model</th><th>Tokens</th><th>TPS</th><th>ms</th></tr></thead><tbody></tbody></table>
-  </div>
-  <script>
-    let all=[], paused=false;
-    const toggle=()=>{paused=!paused; document.getElementById("liveBtn").textContent=paused?"Paused":"Live";};
-    const esc=s=>(s??"").toString().replaceAll("<","&lt;");
-    const render=()=>{
-      const q=document.getElementById("q").value.toLowerCase();
-      const openSet=new Set();
-      document.querySelectorAll('.open').forEach(r=>openSet.add(r.id));
-      const rows=all.filter(x=>!q||JSON.stringify(x).toLowerCase().includes(q));
-      document.querySelector("tbody").innerHTML=rows.map(x=>{
-        let ts=x.ts.split("T")[1]||x.ts; 
-        let rid=(x.rid||"").replace(/[^a-z0-9]/gi,"");
-        let tpsC = Number(x.tps)>10?'#4ade80':'inherit';
-        return `<tr class="data-row" onclick="document.getElementById('d-${rid}').classList.toggle('open')">
-          <td style="color:#888">${ts}</td><td style="color:#4ade80">${esc(x.model)}</td>
-          <td>${esc(x.completion)}</td><td style="color:${tpsC}">${esc(x.tps)}</td><td>${esc(x.ms)}</td>
-        </tr>
-        <tr class="details-row ${openSet.has('d-'+rid)?'open':''}" id="d-${rid}"><td colspan="5" style="padding:10px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-             <div><div style="color:#888">Prompt</div><pre>${esc(x.prompt)}</pre></div>
-             <div><div style="color:#888">Response</div><pre>${esc(x.response)}</pre></div>
-          </div>
-        </td></tr>`
-      }).join("");
-    };
-    const load=async()=>{
-       if(paused)return;
-       try{ 
-         let r=await fetch("/metrics.json"); 
-         if(r.ok){ all=(await r.json()).sort((a,b)=>a.ts<b.ts?1:-1); render(); }
-       }catch(e){}
-    };
-    const clearLogs=async()=>{ if(confirm("Clear?")){ await fetch("/clear",{method:"POST"}); all=[]; render(); }};
-    setInterval(load,1000); load();
-  </script>
-</body>
-</html>
-HTML_END
-
-# =================================================================
-# 6. Service Installation
+# 5. Service Installation
 # =================================================================
 
 if [ "$OS" == "Linux" ]; then

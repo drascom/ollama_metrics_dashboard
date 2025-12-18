@@ -2,11 +2,30 @@
 
 This repository ships a single `install.sh` script that installs a self-contained OpenResty-based middleware for Ollama. The installer provisions an nginx/Lua reverse proxy that records request/response metadata, exposes a lightweight dashboard, and registers the appropriate service (systemd on Linux, LaunchAgent on macOS) so the middleware survives reboots.
 
+## Repository layout
+
+```
+ollama-middleware-src/
+├── install.sh
+├── conf/
+│   └── nginx.conf.template
+├── html/
+│   └── index.html
+└── lua/
+    ├── request.lua
+    ├── response.lua
+    ├── log.lua
+    ├── metrics_json.lua
+    └── clear_logs.lua
+```
+
+The installer copies these assets into the runtime prefix (`/opt/ollama-middleware` on Linux, `~/ollama-middleware` on macOS) and performs minimal templating (e.g., substituting MIME type paths in `nginx.conf`).
+
 ## What the installer does
 
 1. Installs OpenResty (nginx + LuaJIT) from the upstream apt repo (Linux) or Homebrew (macOS) when it is not already present.
 2. Creates the runtime tree in `$INSTALL_DIR` (Linux: `/opt/ollama-middleware`, macOS: `$HOME/ollama-middleware`) with `conf/`, `lua/`, `html/`, and `logs/`.
-3. Writes all runtime assets: nginx config, Lua filters, helper endpoints, and the dashboard UI.
+3. Copies all runtime assets (nginx config template, Lua filters, helper endpoints, and the dashboard UI) into place.
 4. Registers `ollama-middleware.service` that runs `openresty` in prefix mode and restarts automatically.
 5. Starts the service on port `11435` where:
    - `/` proxies to the local Ollama API (`127.0.0.1:11434`) while logging requests/responses.
@@ -17,7 +36,7 @@ This repository ships a single `install.sh` script that installs a self-containe
 ## Requirements
 
 - **Linux (Debian/Ubuntu)** – `systemd`, `bash`, `sudo`, and connectivity to download OpenResty packages; run the installer as `root` (`sudo ./install.sh`).
-- **macOS** – Homebrew installed (`https://brew.sh/`) and Ollama running locally; the installer runs as your user and writes under `$HOME/ollama-middleware`.
+- **macOS** – Homebrew installed (`https://brew.sh/`) with permissions to tap/install `openresty/brew/openresty`; the installer runs as your user and writes under `$HOME/ollama-middleware`.
 - **Common** – Ollama already listening on `127.0.0.1:11434` and the ability to expose port `11435` for the dashboard and metrics endpoints.
 
 ## Installation
@@ -65,6 +84,7 @@ Logs live in `$INSTALL_DIR/logs/metrics.log` (or `~/ollama-middleware/logs/metri
   rm -rf "$HOME/ollama-middleware"
   rm "$HOME/Library/LaunchAgents/uk.drascom.ollama-middleware.plist"
   ```
+- **Uninstallation helper**: run `./uninstall.sh` (with `sudo` on Linux) to stop services, remove LaunchAgents/systemd units, and delete the install directory.
 
 ## Security considerations
 
