@@ -1,93 +1,43 @@
-# Ollama Middleware Metrics Dashboard
+# Clean Ollama Proxy Installer (Linux)
 
-This repository ships a single `install.sh` script that installs a self-contained OpenResty-based middleware for Ollama. The installer provisions an nginx/Lua reverse proxy that records request/response metadata, exposes a lightweight dashboard, and registers the appropriate service (systemd on Linux, LaunchAgent on macOS) so the middleware survives reboots.
+Clean Ollama Proxy is a single-file installation experience that builds and deploys an Ollama reverse proxy/analytics service on Debian or Ubuntu. It wraps `ollama serve`, adds Prometheus metrics and a lightweight dashboard, and runs everything as a managed `systemd` service at `/root/ollama-metrics`.
 
-## Repository layout
+> Thanks to [bmeyer99](https://github.com/bmeyer99/Ollama_Proxy_Wrapper) for the Windows installer concept that inspired this Linux-focused version.
 
-```
-ollama-middleware-src/
-├── install.sh
-├── conf/
-│   └── nginx.conf.template
-├── html/
-│   └── index.html
-└── lua/
-    ├── request.lua
-    ├── response.lua
-    ├── log.lua
-    ├── metrics_json.lua
-    └── clear_logs.lua
-```
-
-The installer copies these assets into the runtime prefix (`/opt/ollama-middleware` on Linux, `~/ollama-middleware` on macOS) and performs minimal templating (e.g., substituting MIME type paths in `nginx.conf`).
-
-## What the installer does
-
-1. Installs OpenResty (nginx + LuaJIT) from the upstream apt repo (Linux) or Homebrew (macOS) when it is not already present.
-2. Creates the runtime tree in `$INSTALL_DIR` (Linux: `/opt/ollama-middleware`, macOS: `$HOME/ollama-middleware`) with `conf/`, `lua/`, `html/`, and `logs/`.
-3. Copies all runtime assets (nginx config template, Lua filters, helper endpoints, and the dashboard UI) into place.
-4. Registers `ollama-middleware.service` that runs `openresty` in prefix mode and restarts automatically.
-5. Starts the service on port `11435` where:
-   - `/` proxies to the local Ollama API (`127.0.0.1:11434`) while logging requests/responses.
-   - `/metrics/` serves the dashboard UI.
-   - `/metrics.json` returns the recent log entries as JSON.
-   - `/clear` truncates the metrics log.
-
-## Requirements
-
-- **Linux (Debian/Ubuntu)** – `systemd`, `bash`, `sudo`, and connectivity to download OpenResty packages; run the installer as `root` (`sudo ./install.sh`).
-- **macOS** – Homebrew installed (`https://brew.sh/`) with permissions to tap/install `openresty/brew/openresty`; the installer runs as your user and writes under `$HOME/ollama-middleware`.
-- **Common** – Ollama already listening on `127.0.0.1:11434` and the ability to expose port `11435` for the dashboard and metrics endpoints.
-
-## Installation
-
+## Run it
 ```bash
-chmod +x install.sh
-./install.sh
+sudo bash install.sh
 ```
 
-The script is idempotent: re-running it updates files in `$INSTALL_DIR` and restarts the registered service.
+Requirements: a Debian/Ubuntu host with `apt`, root privileges, and internet connectivity (for Go modules, apt packages, and the Ollama installer). The script exits immediately when not run as root.
 
-## Components written by the installer
+## What happens during install
+- Existing `ollama`/`ollama-proxy` services are stopped, disabled, and their processes/ports (`11434`, `11435`) are cleared to avoid conflicts.
+- Dependencies (`golang-go`, `curl`, `sqlite3`, plus `strace` for diagnostics) are installed; Ollama itself is downloaded if missing.
+- A Go application is generated that:
+  - Starts `ollama serve` on port `11435` inside the same process group.
+  - Proxies requests on port `11434`, captures per-model Prometheus metrics, and stores request analytics in SQLite (`analytics/ollama_analytics.db`).
+  - Exposes `/metrics`, `/analytics`, `/dashboard`, and `/test` endpoints.
+- The project is built in `/root/ollama-metrics` and wired up to a `systemd` unit (`ollama-proxy.service`) with sane timeouts, restart policies, and logging.
+- Quick checks run before enabling the service: memory/disk summaries, `dmesg` for OOM/security kills, and a `strace` signal trace to catch policy violations.
 
-| Path | Purpose |
-|------|---------|
-| `$INSTALL_DIR/conf/nginx.conf` | Configures OpenResty to proxy to Ollama, load Lua hooks, and serve the dashboard. |
-| `$INSTALL_DIR/lua/request.lua` | Captures metadata (model, prompt, etc.) for chat/generate requests. |
-| `$INSTALL_DIR/lua/response.lua` | Streams the Ollama response, extracts completion statistics, and tracks throughput. |
-| `$INSTALL_DIR/lua/log.lua` | Persists a line-oriented log to `$INSTALL_DIR/logs/metrics.log`. |
-| `$INSTALL_DIR/lua/metrics_json.lua` | Reads the last ~50 log entries and emits JSON for the dashboard. |
-| `$INSTALL_DIR/lua/clear_logs.lua` | Clears the metrics log and returns `{"status":"ok"}`. |
-| `$INSTALL_DIR/html/index.html` | Vanilla HTML/JS dashboard that polls `/metrics.json`, filters, and displays prompts/responses. |
-| `/etc/systemd/system/ollama-middleware.service` (Linux) | Runs OpenResty with the middleware prefix, restarts automatically, and depends on networking. |
-| `$HOME/Library/LaunchAgents/uk.drascom.ollama-middleware.plist` (macOS) | LaunchAgent that keeps OpenResty running and restarts it at login. |
+## What to expect afterwards
+- Proxy endpoint: `http://localhost:11434`
+- Prometheus metrics: `http://localhost:11434/metrics`
+- JSON analytics summary: `http://localhost:11434/analytics`
+- Minimal dashboard UI: `http://localhost:11434/dashboard`
+- Service management:
+  - `systemctl status ollama-proxy`
+  - `journalctl -u ollama-proxy -f`
+  - `systemctl stop|start|restart ollama-proxy`
 
-Logs live in `$INSTALL_DIR/logs/metrics.log` (or `~/ollama-middleware/logs/metrics.log` on macOS) and are writable by everyone (mode `0666`) so OpenResty can append without permission issues.
+All generated files (binary, `main.go`, analytics DB) reside under `/root/ollama-metrics`.
 
-## Operating the service
-
-- **Dashboard**: open `http://<host>:11435/metrics/` to view and filter recent requests. Use the **Clear** button (or `POST /clear`) to reset the log.
-- **Log consumption**: fetch `http://<host>:11435/metrics.json` to programmatically retrieve entries (latest 50).
-- **Service management (Linux)**:
+## Troubleshooting tips
+- If the service fails to start, rerun the installer or inspect:
   ```bash
-  sudo systemctl status ollama-middleware
-  sudo systemctl restart ollama-middleware
-  sudo systemctl disable --now ollama-middleware
-  sudo rm -rf /opt/ollama-middleware
-  sudo rm /etc/systemd/system/ollama-middleware.service
-  sudo systemctl daemon-reload
+  journalctl -u ollama-proxy -n 100 --no-pager
+  systemctl status ollama-proxy --no-pager -l
   ```
-- **Service management (macOS)**:
-  ```bash
-  launchctl list uk.drascom.ollama-middleware
-  launchctl unload "$HOME/Library/LaunchAgents/uk.drascom.ollama-middleware.plist"
-  rm -rf "$HOME/ollama-middleware"
-  rm "$HOME/Library/LaunchAgents/uk.drascom.ollama-middleware.plist"
-  ```
-- **Uninstallation helper**: run `./uninstall.sh` (with `sudo` on Linux) to stop services, remove LaunchAgents/systemd units, and delete the install directory.
-
-## Security considerations
-
-- The middleware binds to all interfaces on port `11435`. Restrict inbound access (e.g., firewall) if the dashboard or log endpoints should not be publicly reachable.
-- Metrics logs include truncated prompts (first 200 characters) and up to 4000 characters of responses. Ensure that storing this information complies with your data-handling requirements.
-- On Linux the service runs as `root` to avoid permission hassles with `/opt/ollama-middleware/logs`. If you harden the setup later, adjust `USER` in `install.sh`, set appropriate directory ownership, and update `user` in `nginx.conf`.
+- Check for port conflicts with `netstat -tlnp | grep -E "(11434|11435)"`.
+- Review the installer console output for the pre-run `dmesg`/`strace` diagnostics—it often surfaces AppArmor/SELinux or OOM issues immediately.
