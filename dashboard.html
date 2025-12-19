@@ -103,6 +103,7 @@
         .loading, .error { text-align: center; padding: 38px; border-radius: 18px; margin-top: 30px; font-size: 1.1rem; }
         .loading { background: rgba(255,255,255,0.07); }
         .error { background: rgba(255,107,107,0.15); color: var(--danger); }
+        .live-table { max-height: 360px; overflow-y: auto; }
         button.refresh {
             background: linear-gradient(120deg, var(--accent), var(--accent-2));
             border: none; color: #050714; padding: 10px 22px;
@@ -185,6 +186,24 @@
                     <h2>Token Generation</h2>
                     <div class="token-grid" id="tokenSummary"></div>
                 </section>
+                <section class="panel">
+                    <h2>Live Request Feed</h2>
+                    <div class="table-wrapper live-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Model</th>
+                                    <th>Endpoint</th>
+                                    <th>Latency</th>
+                                    <th>Tokens</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentTable"></tbody>
+                        </table>
+                    </div>
+                </section>
             </div>
 
             <section class="panel">
@@ -195,11 +214,20 @@
     </div>
 
     <script>
-    const REFRESH_INTERVAL = 20000;
+    const REFRESH_INTERVAL = 5000;
 
     function formatNumber(num, digits = 0) {
         if (num === null || num === undefined || isNaN(num)) return '0';
         return Number(num).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
+    }
+
+    function formatTimeAgo(timestamp) {
+        if (!timestamp) return '-';
+        const date = new Date(timestamp);
+        const diff = (Date.now() - date.getTime()) / 1000;
+        if (diff < 60) return `${Math.max(0, diff).toFixed(0)}s ago`;
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ${Math.floor(diff % 60)}s ago`;
+        return date.toLocaleTimeString();
     }
 
     function parsePrometheus(text) {
@@ -256,12 +284,13 @@
             statusNode.textContent = 'Refreshing…';
         }
         try {
-            const [analyticsRes, metricsRes] = await Promise.all([
+            const [analyticsRes, metricsRes, recentRes] = await Promise.all([
                 fetch('/analytics').then((res) => (res.ok ? res.json() : null)).catch(() => null),
                 fetch('/metrics').then((res) => {
                     if (!res.ok) throw new Error('Metrics endpoint unavailable');
                     return res.text();
-                })
+                }),
+                fetch('/recent?limit=20').then((res) => (res.ok ? res.json() : [])).catch(() => [])
             ]);
 
             const metrics = parsePrometheus(metricsRes);
@@ -306,6 +335,7 @@
             renderLatency(latencyStats.avgByModel);
             renderTokens(tokenStats.avgByModel);
             renderAnalytics(analyticsRes);
+            renderRecent(recentRes);
 
             const now = new Date();
             document.getElementById('lastUpdated').textContent = now.toLocaleTimeString();
@@ -421,7 +451,31 @@
 			'		<div class="stat-value" style="font-size:1.4rem;">' + formatNumber(payload.avg_latency || 0, 3) + 's</div>' +
 			'	</div>' +
 			'</div>' +
-			'<div style="margin-top:16px;">' + (models || 'No historical data yet.') + '</div>';
+		'<div style="margin-top:16px;">' + (models || 'No historical data yet.') + '</div>';
+
+    function renderRecent(entries) {
+        const table = document.getElementById('recentTable');
+        table.innerHTML = '';
+        if (!entries || !entries.length) {
+            table.innerHTML = '<tr><td colspan="6">Waiting for activity...</td></tr>';
+            return;
+        }
+        entries.forEach((entry) => {
+            const pillClass = entry.status && entry.status.startsWith('2')
+                ? 'status-success'
+                : (entry.status && (entry.status.startsWith('4') || entry.status.startsWith('5')) ? 'status-fail' : 'status-other');
+            const tokens = formatNumber(entry.outputTokens || 0) + ' (' + formatNumber(entry.tokensPerSec || 0, 1) + ' tok/s)';
+            const row = document.createElement('tr');
+            row.innerHTML = '' +
+                '<td>' + formatTimeAgo(entry.timestamp) + '</td>' +
+                '<td>' + (entry.model || 'unknown') + '</td>' +
+                '<td>' + (entry.endpoint || '-') + '</td>' +
+                '<td>' + formatNumber(entry.latency || 0, 2) + 's</td>' +
+                '<td>' + tokens + '</td>' +
+                '<td><span class="status-pill ' + pillClass + '">' + (entry.status || '-') + '</span></td>';
+            table.appendChild(row);
+        });
+    }
     }
 
     loadDashboard();

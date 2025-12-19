@@ -105,6 +105,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -116,10 +117,11 @@ import (
 )
 
 const (
-	defaultProxyPort    = "11434"
-	defaultBackendPort  = "11435"
-	defaultAnalyticsDB  = "/usr/local/ollama-metrics/analytics/ollama_analytics.db"
+	defaultProxyPort     = "11434"
+	defaultBackendPort   = "11435"
+	defaultAnalyticsDB   = "/usr/local/ollama-metrics/analytics/ollama_analytics.db"
 	defaultDashboardFile = "/usr/local/ollama-metrics/dashboard.html"
+	defaultRecentLimit   = 25
 )
 
 var (
@@ -236,6 +238,9 @@ func main() {
 
 	mux.HandleFunc("/analytics", func(w http.ResponseWriter, r *http.Request) {
 		handleAnalytics(w, r, analytics)
+	})
+	mux.HandleFunc("/recent", func(w http.ResponseWriter, r *http.Request) {
+		handleRecent(w, r, analytics)
 	})
 	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		serveDashboard(w, r, *dashboardFile)
@@ -450,6 +455,60 @@ func (a *Analytics) Close() error {
 	return a.db.Close()
 }
 
+func (a *Analytics) GetRecent(limit int) ([]RequestData, error) {
+	if limit <= 0 {
+		limit = defaultRecentLimit
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	query := `
+		SELECT timestamp, model, endpoint, prompt, response,
+		       input_tokens, output_tokens, latency, status, client_ip, tokens_per_sec
+		FROM requests
+		ORDER BY timestamp DESC
+		LIMIT ?
+	`
+
+	rows, err := a.db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var recent []RequestData
+	for rows.Next() {
+		var (
+			entry    RequestData
+			rawStamp string
+		)
+		if err := rows.Scan(
+			&rawStamp,
+			&entry.Model,
+			&entry.Endpoint,
+			&entry.Prompt,
+			&entry.Response,
+			&entry.InputTokens,
+			&entry.OutputTokens,
+			&entry.Latency,
+			&entry.Status,
+			&entry.ClientIP,
+			&entry.TokensPerSec,
+		); err != nil {
+			return nil, err
+		}
+		if rawStamp != "" {
+			if ts, err := time.Parse(time.RFC3339Nano, rawStamp); err == nil {
+				entry.Timestamp = ts
+			}
+		}
+		recent = append(recent, entry)
+	}
+
+	return recent, nil
+}
+
 func handleAnalytics(w http.ResponseWriter, r *http.Request, analytics *Analytics) {
 	stats, err := analytics.GetStats()
 	if err != nil {
@@ -459,6 +518,24 @@ func handleAnalytics(w http.ResponseWriter, r *http.Request, analytics *Analytic
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+func handleRecent(w http.ResponseWriter, r *http.Request, analytics *Analytics) {
+	limit := defaultRecentLimit
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	entries, err := analytics.GetRecent(limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entries)
 }
 
 type responseWriter struct {
