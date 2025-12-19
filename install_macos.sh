@@ -1,141 +1,94 @@
 #!/bin/bash
 
 ################################################################################
-# Clean Ollama Proxy Installation Script for Debian Linux
-# Simple, native Linux implementation
-# Installation directory: /root/ollama-metrics
+# Clean Ollama Proxy Installation Script for macOS
+# Builds the Ollama proxy + analytics dashboard and installs it as a launchd job
+# Requires sudo/root privileges
 ################################################################################
 
-set -e
+set -euo pipefail
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Configuration
-INSTALL_DIR="/root/ollama-metrics"
-SERVICE_NAME="ollama-proxy"
-PROXY_PORT="11434"
-BACKEND_PORT="11435"
-ANALYTICS_DIR="${INSTALL_DIR}/analytics"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DASHBOARD_FILE="${INSTALL_DIR}/dashboard.html"
-
 print_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 print_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Check root
-if [ "$EUID" -ne 0 ]; then 
-    print_error "This script must be run as root"
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    print_error "This installer is only supported on macOS"
     exit 1
 fi
 
-print_info "Installing Clean Ollama Proxy for Linux..."
+if [[ "$EUID" -ne 0 ]]; then
+    print_error "Please run with sudo (root privileges required)"
+    exit 1
+fi
 
-# Clean up any previous installations
-print_info "Cleaning up previous installations..."
+INSTALL_DIR="/usr/local/ollama-metrics"
+ANALYTICS_DIR="${INSTALL_DIR}/analytics"
+LOG_DIR="${INSTALL_DIR}/logs"
+BIN_PATH="${INSTALL_DIR}/ollama-proxy"
+SERVICE_LABEL="com.ollama.metrics"
+PLIST_PATH="/Library/LaunchDaemons/${SERVICE_LABEL}.plist"
+PROXY_PORT="11434"
+BACKEND_PORT="11435"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DASHBOARD_FILE="${INSTALL_DIR}/dashboard.html"
 
-# Stop and disable any existing services
-for service in ollama-proxy ollama; do
-    if systemctl is-active --quiet $service 2>/dev/null; then
-        print_info "Stopping $service service..."
-        systemctl stop $service 2>/dev/null || true
+print_info "Installing Clean Ollama Proxy for macOS..."
+
+# Stop existing launchd job if present
+if [[ -f "${PLIST_PATH}" ]]; then
+    print_info "Unloading previous launchd service..."
+    launchctl bootout system "${PLIST_PATH}" >/dev/null 2>&1 || true
+fi
+
+# Kill old processes
+for proc in ollama-proxy ollama; do
+    if pgrep -x "${proc}" >/dev/null 2>&1; then
+        print_warn "Killing ${proc}..."
+        pkill -9 -x "${proc}" || true
     fi
-    if systemctl is-enabled --quiet $service 2>/dev/null; then
-        print_info "Disabling $service service..."
-        systemctl disable $service 2>/dev/null || true
+done
+
+# Free ports if necessary
+for port in "${PROXY_PORT}" "${BACKEND_PORT}"; do
+    if lsof -ti tcp:"${port}" >/dev/null 2>&1; then
+        print_warn "Port ${port} is busy; terminating processes"
+        lsof -ti tcp:"${port}" | xargs -r kill -9 2>/dev/null || true
     fi
 done
 
-# Kill any running processes
-print_info "Killing any running Ollama/proxy processes..."
-pkill -9 ollama-proxy 2>/dev/null && print_info "Killed ollama-proxy" || print_info "No ollama-proxy running"
-pkill -9 ollama 2>/dev/null && print_info "Killed ollama" || print_info "No ollama running"
-sleep 2
+print_info "Preparing install directories..."
+rm -rf "${INSTALL_DIR}"
+mkdir -p "${ANALYTICS_DIR}" "${LOG_DIR}"
+chmod 755 "${INSTALL_DIR}"
 
-print_info "Waiting for processes to terminate..."
-# Wait for processes to actually die
-for i in {1..5}; do
-    if ! pgrep -x ollama > /dev/null && ! pgrep ollama-proxy > /dev/null; then
-        print_info "All processes terminated"
-        break
-    fi
-    sleep 1
-done
-
-# Check if ports are free
-print_info "Checking for port conflicts..."
-for port in 11434 11435; do
-    if netstat -tlnp 2>/dev/null | grep ":$port " > /dev/null; then
-        print_warn "Port $port is in use:"
-        netstat -tlnp | grep ":$port "
-        PID=$(netstat -tlnp 2>/dev/null | grep ":$port " | awk '{print $7}' | cut -d'/' -f1)
-        if [ -n "$PID" ]; then
-            print_warn "Killing process $PID on port $port"
-            kill -9 $PID 2>/dev/null || true
-        fi
-    fi
-done
-sleep 1
-
-# Remove old service files
-if [ -f /etc/systemd/system/ollama-proxy.service ]; then
-    print_info "Removing old service file..."
-    rm -f /etc/systemd/system/ollama-proxy.service
-    systemctl daemon-reload
-fi
-
-# Clean old installation directory
-if [ -d "${INSTALL_DIR}" ]; then
-    print_info "Removing old installation directory..."
-    rm -rf "${INSTALL_DIR}"
-fi
-
-print_info "Cleanup complete. Starting fresh installation..."
-echo ""
-
-# Install dependencies
-print_info "Installing dependencies..."
-apt-get update
-apt-get install -y golang-go curl sqlite3
-
-GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
-print_info "Go version: ${GO_VERSION}"
-
-# Install Ollama if needed
-if ! command -v ollama &> /dev/null; then
-    print_warn "Installing Ollama..."
-    curl -fsSL https://ollama.com/install.sh | sh
-    print_info "Ollama installed"
-else
-    print_info "Ollama already installed: $(ollama --version 2>&1 | head -1)"
-fi
-
-# Make sure Ollama service is disabled (we'll manage it ourselves)
-if systemctl list-unit-files | grep -q ollama.service; then
-    print_info "Ensuring Ollama system service is disabled..."
-    systemctl stop ollama 2>/dev/null || true
-    systemctl disable ollama 2>/dev/null || true
-fi
-
-# Create directories
-print_info "Creating directories..."
-mkdir -p "${INSTALL_DIR}"
-mkdir -p "${ANALYTICS_DIR}"
-cd "${INSTALL_DIR}"
-
-if [ ! -f "${SCRIPT_DIR}/dashboard.html" ]; then
-    print_error "dashboard.html not found next to install.sh"
+if [[ ! -f "${SCRIPT_DIR}/dashboard.html" ]]; then
+    print_error "dashboard.html not found next to install_macos.sh"
     exit 1
 fi
 cp "${SCRIPT_DIR}/dashboard.html" "${DASHBOARD_FILE}"
 
-# Create the Go application
-print_info "Creating ollama-proxy application..."
-cat > main.go << 'GOEOF'
+if ! command -v brew >/dev/null 2>&1; then
+    print_error "Homebrew is required. Install from https://brew.sh and rerun."
+    exit 1
+fi
+
+print_info "Installing dependencies via Homebrew (Go, SQLite)..."
+brew update >/dev/null
+brew install go sqlite3 >/dev/null 2>&1 || true
+
+if ! command -v ollama >/dev/null 2>&1; then
+    print_warn "Ollama CLI not found. Installing via official script..."
+    curl -fsSL https://ollama.com/install.sh | sh
+fi
+
+print_info "Writing Go source..."
+cat > "${INSTALL_DIR}/main.go" <<'GOEOF'
 package main
 
 import (
@@ -165,8 +118,8 @@ import (
 const (
 	defaultProxyPort    = "11434"
 	defaultBackendPort  = "11435"
-	defaultAnalyticsDB  = "/root/ollama-metrics/analytics/ollama_analytics.db"
-	defaultDashboardFile = "/root/ollama-metrics/dashboard.html"
+	defaultAnalyticsDB  = "/usr/local/ollama-metrics/analytics/ollama_analytics.db"
+	defaultDashboardFile = "/usr/local/ollama-metrics/dashboard.html"
 )
 
 var (
@@ -237,7 +190,7 @@ func main() {
 	dashboardFile := flag.String("dashboard-file", getEnv("DASHBOARD_FILE", defaultDashboardFile), "Dashboard HTML path")
 	flag.Parse()
 
-	log.Printf("Starting Ollama Proxy for Linux")
+	log.Printf("Starting Ollama Proxy for macOS")
 	log.Printf("Proxy Port: %s", *proxyPort)
 	log.Printf("Backend Port: %s", *backendPort)
 	log.Printf("Analytics DB: %s", *analyticsDB)
@@ -544,144 +497,61 @@ func serveDashboard(w http.ResponseWriter, r *http.Request, path string) {
 }
 GOEOF
 
-# Initialize Go module
 print_info "Initializing Go module..."
-go mod init ollama-proxy 2>/dev/null || true
-go get github.com/prometheus/client_golang/prometheus
-go get github.com/prometheus/client_golang/prometheus/promhttp
-go get modernc.org/sqlite
-go mod tidy
+pushd "${INSTALL_DIR}" >/dev/null
+export GO111MODULE=on
+go mod init ollama-proxy >/dev/null 2>&1 || true
+go get github.com/prometheus/client_golang/prometheus >/dev/null
+go get github.com/prometheus/client_golang/prometheus/promhttp >/dev/null
+go get modernc.org/sqlite >/dev/null
+go mod tidy >/dev/null
 
-# Build
 print_info "Building application..."
-go build -o ollama-proxy main.go
+go build -o "${BIN_PATH}" main.go
+popd >/dev/null
 
-# Check system resources
-print_info "Checking system resources..."
-echo "Memory:"
-free -h
-echo ""
-echo "Disk:"
-df -h ${INSTALL_DIR}
-echo ""
+chmod 755 "${BIN_PATH}"
 
-# Check for OOM killer activity
-if dmesg | tail -50 | grep -i "killed process" > /dev/null 2>&1; then
-    print_warn "OOM Killer has been active recently:"
-    dmesg | tail -50 | grep -i "killed process"
-    echo ""
-fi
-
-# Check if something is killing processes
-print_info "Checking for process restrictions..."
-if command -v systemd-analyze &> /dev/null; then
-    systemd-analyze security ollama-proxy.service 2>/dev/null || true
-fi
-
-# Create systemd service
-print_info "Creating systemd service..."
-cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
-[Unit]
-Description=Ollama Proxy Service
-After=network.target network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=${INSTALL_DIR}
-Environment="PROXY_PORT=${PROXY_PORT}"
-Environment="OLLAMA_BACKEND_PORT=${BACKEND_PORT}"
-Environment="ANALYTICS_DB=${ANALYTICS_DIR}/ollama_analytics.db"
-Environment="DASHBOARD_FILE=${DASHBOARD_FILE}"
-Environment="PATH=/usr/local/bin:/usr/bin:/bin"
-ExecStart=${INSTALL_DIR}/ollama-proxy
-Restart=always
-RestartSec=10s
-
-# Give it time to start Ollama
-TimeoutStartSec=120s
-TimeoutStopSec=30s
-
-# Don't kill during startup
-KillMode=mixed
-SendSIGKILL=no
-
-# Logging
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=ollama-proxy
-
-[Install]
-WantedBy=multi-user.target
+print_info "Creating launchd service..."
+cat > "${PLIST_PATH}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${SERVICE_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${BIN_PATH}</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PROXY_PORT</key><string>${PROXY_PORT}</string>
+        <key>OLLAMA_BACKEND_PORT</key><string>${BACKEND_PORT}</string>
+        <key>ANALYTICS_DB</key><string>${ANALYTICS_DIR}/ollama_analytics.db</string>
+        <key>DASHBOARD_FILE</key><string>${DASHBOARD_FILE}</string>
+    </dict>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>WorkingDirectory</key><string>${INSTALL_DIR}</string>
+    <key>StandardOutPath</key><string>${LOG_DIR}/ollama-proxy.log</string>
+    <key>StandardErrorPath</key><string>${LOG_DIR}/ollama-proxy-error.log</string>
+</dict>
+</plist>
 EOF
 
-# Test the binary first
-print_info "Testing binary directly (not in background)..."
-echo "If this hangs, press Ctrl+C after 3 seconds..."
+chown root:wheel "${PLIST_PATH}"
+chmod 644 "${PLIST_PATH}"
 
-# Run in foreground for a moment to see actual output
-timeout 3s ${INSTALL_DIR}/ollama-proxy 2>&1 | head -20 || true
+print_info "Loading launchd service..."
+launchctl bootstrap system "${PLIST_PATH}"
+launchctl enable "system/${SERVICE_LABEL}"
+launchctl kickstart -k "system/${SERVICE_LABEL}"
 
+print_info "Installation complete!"
+echo "Service: ${SERVICE_LABEL}"
+echo "Binary:  ${BIN_PATH}"
+echo "Proxy:   http://localhost:${PROXY_PORT}"
+echo "Dashboard: http://localhost:${PROXY_PORT}/dashboard"
 echo ""
-print_info "Checking dmesg for OOM or security kills..."
-dmesg | tail -30 | grep -iE "(kill|oom|security|audit)" || echo "No kill messages found"
-
-echo ""
-print_info "Checking if Ollama is already running..."
-if pgrep -x ollama > /dev/null; then
-    print_warn "Ollama is already running! Killing it..."
-    pkill -9 ollama
-    sleep 2
-fi
-
-# Try running with strace to see what's killing it
-print_info "Installing strace for debugging..."
-apt-get install -y strace > /dev/null 2>&1 || true
-
-print_info "Testing with strace to see system calls..."
-timeout 3s strace -e trace=signal ${INSTALL_DIR}/ollama-proxy 2>&1 | tail -20 || true
-
-# Enable and start
-print_info "Starting systemd service..."
-systemctl daemon-reload
-systemctl enable ${SERVICE_NAME}
-systemctl start ${SERVICE_NAME}
-
-# Wait and check with detailed logging
-print_info "Waiting for service to start..."
-sleep 5
-
-if systemctl is-active --quiet ${SERVICE_NAME}; then
-    print_info "✓ Service started successfully!"
-    echo ""
-    echo "================================================================"
-    print_info "Installation Complete!"
-    echo "================================================================"
-    echo ""
-    echo "Service: ${SERVICE_NAME}"
-    echo "Proxy: http://localhost:${PROXY_PORT}"
-    echo "Metrics: http://localhost:${PROXY_PORT}/metrics"
-    echo "Analytics: http://localhost:${PROXY_PORT}/analytics"
-    echo ""
-    echo "Commands:"
-    echo "  systemctl status ${SERVICE_NAME}"
-    echo "  journalctl -u ${SERVICE_NAME} -f"
-    echo ""
-else
-    print_error "Service failed to start"
-    echo ""
-    echo "=== Service Status ==="
-    systemctl status ${SERVICE_NAME} --no-pager -l
-    echo ""
-    echo "=== Journal Logs ==="
-    journalctl -u ${SERVICE_NAME} -n 50 --no-pager
-    echo ""
-    echo "=== Checking for port conflicts ==="
-    netstat -tlnp | grep -E "(11434|11435)" || echo "No conflicts found"
-    echo ""
-    print_warn "Try running manually to see errors:"
-    echo "  cd ${INSTALL_DIR}"
-    echo "  ./ollama-proxy"
-    exit 1
-fi
+echo "Use 'launchctl print system/${SERVICE_LABEL}' to inspect status."
