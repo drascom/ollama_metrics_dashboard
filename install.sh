@@ -860,13 +860,6 @@ fi
 
 # Create systemd service
 print_info "Creating systemd service..."
-SYSTEMD_WORKDIR_ESCAPED="${INSTALL_DIR}"
-if command -v systemd-escape >/dev/null 2>&1; then
-    SYSTEMD_WORKDIR_ESCAPED=$(systemd-escape --path "${INSTALL_DIR}")
-else
-    SYSTEMD_WORKDIR_ESCAPED=$(printf '%s' "${INSTALL_DIR}" | sed 's/\\/\\\\/g; s/ /\\x20/g')
-fi
-SYSTEMD_EXEC_ESCAPED="${SYSTEMD_WORKDIR_ESCAPED}/ollama-proxy"
 cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
 [Unit]
 Description=Ollama Proxy Service
@@ -876,13 +869,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=${SYSTEMD_WORKDIR_ESCAPED}
+WorkingDirectory="${INSTALL_DIR}"
 Environment="PROXY_PORT=${PROXY_PORT}"
 Environment="OLLAMA_BACKEND_PORT=${BACKEND_PORT}"
 Environment="ANALYTICS_DB=${ANALYTICS_DIR}/ollama_analytics.db"
 Environment="DASHBOARD_FILE=${DASHBOARD_FILE}"
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
-ExecStart=${SYSTEMD_EXEC_ESCAPED}
+ExecStart="${INSTALL_DIR}/ollama-proxy"
 Restart=always
 RestartSec=10s
 
