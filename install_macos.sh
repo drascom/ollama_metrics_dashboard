@@ -696,6 +696,7 @@ chown root:wheel "${PLIST_PATH}"
 chmod 644 "${PLIST_PATH}"
 
 print_info "Loading launchd service..."
+launchctl enable "system/${SERVICE_LABEL}" >/dev/null 2>&1 || true
 launchctl bootstrap system "${PLIST_PATH}"
 launchctl enable "system/${SERVICE_LABEL}"
 launchctl kickstart -k "system/${SERVICE_LABEL}"
