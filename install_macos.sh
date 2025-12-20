@@ -40,8 +40,16 @@ run_brew() {
         brew "$@"
 }
 
+BUILD_DIR=""
+cleanup_build_dir() {
+    if [[ -n "${BUILD_DIR:-}" && -d "${BUILD_DIR}" ]]; then
+        rm -rf "${BUILD_DIR}"
+    fi
+}
+trap cleanup_build_dir EXIT
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-INSTALL_DIR="${SCRIPT_DIR}"
+INSTALL_DIR="${INSTALL_PREFIX:-/usr/local/ollama-metrics}"
 ANALYTICS_DIR="${INSTALL_DIR}/analytics"
 LOG_DIR="${INSTALL_DIR}/logs"
 BIN_PATH="${INSTALL_DIR}/ollama-proxy"
@@ -50,6 +58,7 @@ PLIST_PATH="/Library/LaunchDaemons/${SERVICE_LABEL}.plist"
 PROXY_PORT="11434"
 BACKEND_PORT="11435"
 DASHBOARD_FILE="${INSTALL_DIR}/dashboard.html"
+SOURCE_DASHBOARD="${SCRIPT_DIR}/dashboard.html"
 
 perform_uninstall() {
     print_info "Uninstalling Clean Ollama Proxy for macOS..."
@@ -70,9 +79,8 @@ perform_uninstall() {
     done
 
     print_info "Removing installed files..."
-    rm -f "${PLIST_PATH}" "${BIN_PATH}" "${INSTALL_DIR}/main.go" \
-        "${INSTALL_DIR}/go.mod" "${INSTALL_DIR}/go.sum"
-    rm -rf "${ANALYTICS_DIR}" "${LOG_DIR}"
+    rm -f "${PLIST_PATH}"
+    rm -rf "${INSTALL_DIR}"
 
     print_info "Uninstall complete."
 }
@@ -128,15 +136,15 @@ for port in "${PROXY_PORT}" "${BACKEND_PORT}"; do
 done
 
 print_info "Preparing install directories..."
-rm -f "${INSTALL_DIR}/ollama-proxy" "${INSTALL_DIR}/main.go" "${INSTALL_DIR}/go.mod" "${INSTALL_DIR}/go.sum"
-rm -rf "${ANALYTICS_DIR}"
-mkdir -p "${ANALYTICS_DIR}" "${LOG_DIR}"
+rm -rf "${INSTALL_DIR}"
+mkdir -p "${INSTALL_DIR}" "${ANALYTICS_DIR}" "${LOG_DIR}"
 chmod 755 "${INSTALL_DIR}"
 
-if [[ ! -f "${SCRIPT_DIR}/dashboard.html" ]]; then
+if [[ ! -f "${SOURCE_DASHBOARD}" ]]; then
     print_error "dashboard.html not found next to install_macos.sh"
     exit 1
 fi
+cp "${SOURCE_DASHBOARD}" "${DASHBOARD_FILE}"
 
 if ! command -v brew >/dev/null 2>&1; then
     print_error "Homebrew is required. Install from https://brew.sh and rerun."
@@ -152,8 +160,10 @@ if ! command -v ollama >/dev/null 2>&1; then
     curl -fsSL https://ollama.com/install.sh | sh
 fi
 
+BUILD_DIR="$(mktemp -d)"
+
 print_info "Writing Go source..."
-cat > "${INSTALL_DIR}/main.go" <<'GOEOF'
+cat > "${BUILD_DIR}/main.go" <<'GOEOF'
 package main
 
 import (
@@ -640,7 +650,7 @@ func serveDashboard(w http.ResponseWriter, r *http.Request, path string) {
 GOEOF
 
 print_info "Initializing Go module..."
-pushd "${INSTALL_DIR}" >/dev/null
+pushd "${BUILD_DIR}" >/dev/null
 export GO111MODULE=on
 go mod init ollama-proxy >/dev/null 2>&1 || true
 go get github.com/prometheus/client_golang/prometheus >/dev/null

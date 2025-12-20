@@ -1,12 +1,12 @@
 #!/bin/bash
 
 ################################################################################
-# Clean Ollama Proxy Installation Script for Debian Linux
+# Clean Ollama Proxy Installation Script for Debian/Ubuntu
 # Simple, native Linux implementation
-# Installation directory: /root/ollama-metrics
+# Default installation directory: /usr/local/ollama-metrics (override with INSTALL_PREFIX)
 ################################################################################
 
-set -e
+set -euo pipefail
 
 # Colors
 RED='\033[0;31m'
@@ -16,16 +16,117 @@ NC='\033[0m'
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-INSTALL_DIR="${SCRIPT_DIR}"
+INSTALL_DIR="${INSTALL_PREFIX:-/usr/local/ollama-metrics}"
 SERVICE_NAME="ollama-proxy"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 PROXY_PORT="11434"
 BACKEND_PORT="11435"
 ANALYTICS_DIR="${INSTALL_DIR}/analytics"
+LOG_DIR="${INSTALL_DIR}/logs"
 DASHBOARD_FILE="${INSTALL_DIR}/dashboard.html"
+SOURCE_DASHBOARD="${SCRIPT_DIR}/dashboard.html"
+BIN_PATH="${INSTALL_DIR}/ollama-proxy"
 
 print_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 print_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+BUILD_DIR=""
+cleanup_build_dir() {
+    if [[ -n "${BUILD_DIR}" && -d "${BUILD_DIR}" ]]; then
+        rm -rf "${BUILD_DIR}"
+    fi
+}
+trap cleanup_build_dir EXIT
+
+normalize_action() {
+    local choice="${1:-}"
+    choice="$(printf '%s' "${choice}" | tr '[:upper:]' '[:lower:]')"
+    case "${choice}" in
+        i|install) echo "install" ;;
+        u|uninstall|remove) echo "uninstall" ;;
+        r|reinstall) echo "reinstall" ;;
+        *) return 1 ;;
+    esac
+}
+
+prompt_for_action() {
+    while true; do
+        echo "Select an action:"
+        echo "  [i] Install"
+        echo "  [u] Uninstall"
+        echo "  [r] Reinstall"
+        read -rp "Choice [i/u/r]: " response || exit 1
+        if ACTION="$(normalize_action "${response}")"; then
+            break
+        fi
+        print_warn "Invalid choice. Please select install, uninstall, or reinstall."
+    done
+}
+
+cleanup_previous_install() {
+    print_info "Cleaning up previous installations..."
+
+    for service in "${SERVICE_NAME}" "ollama"; do
+        if systemctl is-active --quiet "${service}" 2>/dev/null; then
+            print_info "Stopping ${service} service..."
+            systemctl stop "${service}" 2>/dev/null || true
+        fi
+        if systemctl is-enabled --quiet "${service}" 2>/dev/null; then
+            print_info "Disabling ${service} service..."
+            systemctl disable "${service}" 2>/dev/null || true
+        fi
+    done
+
+    print_info "Killing any running Ollama/proxy processes..."
+    pkill -9 "${SERVICE_NAME}" 2>/dev/null && print_info "Killed ${SERVICE_NAME}" || print_info "No ${SERVICE_NAME} running"
+    pkill -9 ollama 2>/dev/null && print_info "Killed ollama" || print_info "No ollama running"
+    sleep 2
+
+    print_info "Waiting for processes to terminate..."
+    for i in {1..5}; do
+        if ! pgrep -x ollama >/dev/null && ! pgrep -x "${SERVICE_NAME}" >/dev/null; then
+            print_info "All processes terminated"
+            break
+        fi
+        sleep 1
+    done
+
+    print_info "Checking for port conflicts..."
+    for port in "${PROXY_PORT}" "${BACKEND_PORT}"; do
+        if command -v lsof >/dev/null 2>&1; then
+            if lsof -ti tcp:"${port}" >/dev/null 2>&1; then
+                print_warn "Port ${port} is in use; terminating holders"
+                lsof -ti tcp:"${port}" | xargs -r kill -9 2>/dev/null || true
+            fi
+        elif command -v netstat >/dev/null 2>&1; then
+            if netstat -tlnp 2>/dev/null | grep ":${port} " >/dev/null; then
+                print_warn "Port ${port} is in use"
+                netstat -tlnp 2>/dev/null | grep ":${port} "
+                PID=$(netstat -tlnp 2>/dev/null | grep ":${port} " | awk '{print $7}' | cut -d'/' -f1)
+                if [[ -n "${PID}" ]]; then
+                    print_warn "Killing process ${PID} on port ${port}"
+                    kill -9 "${PID}" 2>/dev/null || true
+                fi
+            fi
+        fi
+    done
+
+    if [[ -f "${SERVICE_FILE}" ]]; then
+        print_info "Removing old service file..."
+        rm -f "${SERVICE_FILE}"
+        systemctl daemon-reload
+    fi
+
+    print_info "Removing previous install directory..."
+    rm -rf "${INSTALL_DIR}"
+}
+
+perform_uninstall() {
+    print_info "Uninstalling Clean Ollama Proxy for Linux..."
+    cleanup_previous_install
+    print_info "Uninstall complete."
+}
 
 # Check root
 if [ "$EUID" -ne 0 ]; then 
@@ -33,68 +134,30 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-print_info "Installing Clean Ollama Proxy for Linux..."
-
-# Clean up any previous installations
-print_info "Cleaning up previous installations..."
-
-# Stop and disable any existing services
-for service in ollama-proxy ollama; do
-    if systemctl is-active --quiet $service 2>/dev/null; then
-        print_info "Stopping $service service..."
-        systemctl stop $service 2>/dev/null || true
+ACTION="${1:-}"
+if [[ -n "${ACTION}" ]]; then
+    if ! ACTION="$(normalize_action "${ACTION}")"; then
+        print_error "Unknown action '${1}'. Use install, uninstall, or reinstall."
+        exit 1
     fi
-    if systemctl is-enabled --quiet $service 2>/dev/null; then
-        print_info "Disabling $service service..."
-        systemctl disable $service 2>/dev/null || true
-    fi
-done
-
-# Kill any running processes
-print_info "Killing any running Ollama/proxy processes..."
-pkill -9 ollama-proxy 2>/dev/null && print_info "Killed ollama-proxy" || print_info "No ollama-proxy running"
-pkill -9 ollama 2>/dev/null && print_info "Killed ollama" || print_info "No ollama running"
-sleep 2
-
-print_info "Waiting for processes to terminate..."
-# Wait for processes to actually die
-for i in {1..5}; do
-    if ! pgrep -x ollama > /dev/null && ! pgrep ollama-proxy > /dev/null; then
-        print_info "All processes terminated"
-        break
-    fi
-    sleep 1
-done
-
-# Check if ports are free
-print_info "Checking for port conflicts..."
-for port in 11434 11435; do
-    if netstat -tlnp 2>/dev/null | grep ":$port " > /dev/null; then
-        print_warn "Port $port is in use:"
-        netstat -tlnp | grep ":$port "
-        PID=$(netstat -tlnp 2>/dev/null | grep ":$port " | awk '{print $7}' | cut -d'/' -f1)
-        if [ -n "$PID" ]; then
-            print_warn "Killing process $PID on port $port"
-            kill -9 $PID 2>/dev/null || true
-        fi
-    fi
-done
-sleep 1
-
-# Remove old service files
-if [ -f /etc/systemd/system/ollama-proxy.service ]; then
-    print_info "Removing old service file..."
-    rm -f /etc/systemd/system/ollama-proxy.service
-    systemctl daemon-reload
+else
+    prompt_for_action
 fi
 
-# Clean old build artifacts
-print_info "Cleaning previous build artifacts..."
-rm -f "${INSTALL_DIR}/ollama-proxy" "${INSTALL_DIR}/main.go" "${INSTALL_DIR}/go.mod" "${INSTALL_DIR}/go.sum"
-rm -rf "${ANALYTICS_DIR}"
+if [[ "${ACTION}" == "uninstall" ]]; then
+    perform_uninstall
+    exit 0
+fi
 
-print_info "Cleanup complete. Starting fresh installation..."
-echo ""
+if [[ "${ACTION}" == "reinstall" ]]; then
+    perform_uninstall
+fi
+
+if [[ "${ACTION}" != "reinstall" ]]; then
+    cleanup_previous_install
+fi
+
+print_info "Installing Clean Ollama Proxy for Linux..."
 
 # Install dependencies
 print_info "Installing dependencies..."
@@ -122,18 +185,20 @@ fi
 
 # Create directories
 print_info "Creating directories..."
-mkdir -p "${INSTALL_DIR}"
-mkdir -p "${ANALYTICS_DIR}"
-cd "${INSTALL_DIR}"
+mkdir -p "${INSTALL_DIR}" "${ANALYTICS_DIR}" "${LOG_DIR}"
 
-if [ ! -f "${SCRIPT_DIR}/dashboard.html" ]; then
+if [ ! -f "${SOURCE_DASHBOARD}" ]; then
     print_error "dashboard.html not found next to install.sh"
     exit 1
 fi
+cp "${SOURCE_DASHBOARD}" "${DASHBOARD_FILE}"
+chmod 755 "${INSTALL_DIR}"
+
+BUILD_DIR="$(mktemp -d)"
 
 # Create the Go application
 print_info "Creating ollama-proxy application..."
-cat > main.go << 'GOEOF'
+cat > "${BUILD_DIR}/main.go" << 'GOEOF'
 package main
 
 import (
@@ -826,15 +891,18 @@ GOEOF
 
 # Initialize Go module
 print_info "Initializing Go module..."
-go mod init ollama-proxy 2>/dev/null || true
-go get github.com/prometheus/client_golang/prometheus
-go get github.com/prometheus/client_golang/prometheus/promhttp
-go get modernc.org/sqlite
-go mod tidy
+pushd "${BUILD_DIR}" >/dev/null
+export GO111MODULE=on
+go mod init ollama-proxy >/dev/null 2>&1 || true
+go get github.com/prometheus/client_golang/prometheus >/dev/null
+go get github.com/prometheus/client_golang/prometheus/promhttp >/dev/null
+go get modernc.org/sqlite >/dev/null
+go mod tidy >/dev/null
 
 # Build
 print_info "Building application..."
-go build -o ollama-proxy main.go
+go build -o "${BIN_PATH}" main.go
+popd >/dev/null
 
 # Check system resources
 print_info "Checking system resources..."
@@ -855,12 +923,12 @@ fi
 # Check if something is killing processes
 print_info "Checking for process restrictions..."
 if command -v systemd-analyze &> /dev/null; then
-    systemd-analyze security ollama-proxy.service 2>/dev/null || true
+    systemd-analyze security "${SERVICE_NAME}.service" 2>/dev/null || true
 fi
 
 # Create systemd service
 print_info "Creating systemd service..."
-cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
+cat > "${SERVICE_FILE}" << EOF
 [Unit]
 Description=Ollama Proxy Service
 After=network.target network-online.target
@@ -875,7 +943,7 @@ Environment="OLLAMA_BACKEND_PORT=${BACKEND_PORT}"
 Environment="ANALYTICS_DB=${ANALYTICS_DIR}/ollama_analytics.db"
 Environment="DASHBOARD_FILE=${DASHBOARD_FILE}"
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
-ExecStart=${INSTALL_DIR}/ollama-proxy
+ExecStart=${BIN_PATH}
 Restart=always
 RestartSec=10s
 
@@ -901,7 +969,7 @@ print_info "Testing binary directly (not in background)..."
 echo "If this hangs, press Ctrl+C after 3 seconds..."
 
 # Run in foreground for a moment to see actual output
-timeout 3s "${INSTALL_DIR}/ollama-proxy" 2>&1 | head -20 || true
+timeout 3s "${BIN_PATH}" 2>&1 | head -20 || true
 
 echo ""
 print_info "Checking dmesg for OOM or security kills..."
@@ -920,7 +988,7 @@ print_info "Installing strace for debugging..."
 apt-get install -y strace > /dev/null 2>&1 || true
 
 print_info "Testing with strace to see system calls..."
-timeout 3s strace -e trace=signal "${INSTALL_DIR}/ollama-proxy" 2>&1 | tail -20 || true
+timeout 3s strace -e trace=signal "${BIN_PATH}" 2>&1 | tail -20 || true
 
 # Enable and start
 print_info "Starting systemd service..."
