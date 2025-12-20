@@ -82,6 +82,7 @@
             min-height: 200px;
         }
         .panel h2 { margin: 0 0 18px; font-size: 1.2rem; letter-spacing: 0.02em; }
+        .panel-full { width: 100%; margin-bottom: 24px; }
         .model-list { display: flex; flex-direction: column; gap: 12px; }
         .model-row { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 12px 16px; border-radius: 14px; }
         .model-row strong { font-size: 1.05rem; }
@@ -180,6 +181,27 @@
                 </section>
             </div>
 
+            <section class="panel panel-full">
+                <h2>Live Request Feed</h2>
+                <div class="table-wrapper live-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Model</th>
+                                <th>Endpoint</th>
+                                <th>Latency</th>
+                                <th>Tokens</th>
+                                <th>Durations</th>
+                                <th>Status</th>
+                                <th>Response</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentTable"></tbody>
+                    </table>
+                </div>
+            </section>
+
             <div class="panels">
                 <section class="panel">
                     <h2>Latency by Model</h2>
@@ -188,26 +210,6 @@
                 <section class="panel">
                     <h2>Token Generation</h2>
                     <div class="token-grid" id="tokenSummary"></div>
-                </section>
-                <section class="panel">
-                    <h2>Live Request Feed</h2>
-                    <div class="table-wrapper live-table">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Time</th>
-                                    <th>Model</th>
-                                    <th>Endpoint</th>
-                                    <th>Latency</th>
-                                    <th>Tokens</th>
-                                    <th>Durations</th>
-                                    <th>Status</th>
-                                    <th>Response</th>
-                                </tr>
-                            </thead>
-                            <tbody id="recentTable"></tbody>
-                        </table>
-                    </div>
                 </section>
             </div>
 
