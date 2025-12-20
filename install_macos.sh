@@ -683,6 +683,7 @@ cat > "${PLIST_PATH}" <<EOF
         <key>ANALYTICS_DB</key><string>${ANALYTICS_DIR}/ollama_analytics.db</string>
         <key>DASHBOARD_FILE</key><string>${DASHBOARD_FILE}</string>
         <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key><string>/var/root</string>
     </dict>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
