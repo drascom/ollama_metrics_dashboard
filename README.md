@@ -20,7 +20,7 @@ Requirements: a Debian/Ubuntu host with `apt`, root privileges, and internet con
 - Dependencies (`golang-go`, `curl`, `sqlite3`, plus `strace` for diagnostics) are installed; Ollama itself is downloaded if missing.
 - A Go application is generated that:
   - Starts `ollama serve` on port `11435` inside the same process group.
-  - Proxies requests on port `11434`, captures per-model Prometheus metrics, and stores request analytics in SQLite (`analytics/ollama_analytics.db`).
+  - Proxies requests on port `11434`, captures per-model Prometheus metrics, and stores request analytics (prompts, responses, token counts, and duration breakdowns) in SQLite (`analytics/ollama_analytics.db`).
   - Exposes `/metrics`, `/analytics`, `/dashboard`, and `/test` endpoints.
 - The project is built in `/root/ollama-metrics` and wired up to a `systemd` unit (`ollama-proxy.service`) with sane timeouts, restart policies, and logging.
 - Quick checks run before enabling the service: memory/disk summaries, `dmesg` for OOM/security kills, and a `strace` signal trace to catch policy violations.
@@ -36,6 +36,10 @@ Requirements: a Debian/Ubuntu host with `apt`, root privileges, and internet con
   - `systemctl stop|start|restart ollama-proxy`
 
 All generated files (binary, `main.go`, analytics DB) reside under `/root/ollama-metrics`.
+
+## Dashboard preview
+
+![Screenshot of the Ollama metrics dashboard](home.jpg)
 
 ## Troubleshooting tips
 - If the service fails to start, rerun the installer or inspect:
