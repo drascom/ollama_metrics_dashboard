@@ -1,4 +1,4 @@
-# Please do not use yet ! It is not ready i am updating constantly.
+# Not working at Mac OS yet only debian/ubuntu
 
 
 

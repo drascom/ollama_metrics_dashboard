@@ -27,6 +27,19 @@ if [[ "$EUID" -ne 0 ]]; then
     exit 1
 fi
 
+ORIGINAL_USER="${SUDO_USER:-}"
+if [[ -z "${ORIGINAL_USER}" || "${ORIGINAL_USER}" == "root" ]]; then
+    print_error "Run this script via sudo from a non-root user so Homebrew can run safely"
+    exit 1
+fi
+
+run_brew() {
+    sudo -u "${ORIGINAL_USER}" -H \
+        NONINTERACTIVE=1 \
+        HOMEBREW_NO_ENV_HINTS=1 \
+        brew "$@"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="${SCRIPT_DIR}"
 ANALYTICS_DIR="${INSTALL_DIR}/analytics"
@@ -38,6 +51,58 @@ PROXY_PORT="11434"
 BACKEND_PORT="11435"
 DASHBOARD_FILE="${INSTALL_DIR}/dashboard.html"
 
+perform_uninstall() {
+    print_info "Uninstalling Clean Ollama Proxy for macOS..."
+
+    if [[ -f "${PLIST_PATH}" ]]; then
+        print_info "Unloading launchd service..."
+        launchctl bootout system "${PLIST_PATH}" >/dev/null 2>&1 || true
+        launchctl disable "system/${SERVICE_LABEL}" >/dev/null 2>&1 || true
+    else
+        print_warn "Launchd service not found; skipping unload."
+    fi
+
+    for proc in ollama-proxy ollama; do
+        if pgrep -x "${proc}" >/dev/null 2>&1; then
+            print_warn "Killing ${proc}..."
+            pkill -9 -x "${proc}" >/dev/null 2>&1 || true
+        fi
+    done
+
+    print_info "Removing installed files..."
+    rm -f "${PLIST_PATH}" "${BIN_PATH}" "${INSTALL_DIR}/main.go" \
+        "${INSTALL_DIR}/go.mod" "${INSTALL_DIR}/go.sum"
+    rm -rf "${ANALYTICS_DIR}" "${LOG_DIR}"
+
+    print_info "Uninstall complete."
+}
+
+normalize_action() {
+    local choice="${1:-}"
+    choice="$(printf '%s' "${choice}" | tr '[:upper:]' '[:lower:]')"
+    case "${choice}" in
+        i|install) echo "install" ;;
+        u|uninstall|remove) echo "uninstall" ;;
+        r|reinstall) echo "reinstall" ;;
+        *) return 1 ;;
+    esac
+}
+
+prompt_for_action() {
+    while true; do
+        echo "Select an action:"
+        echo "  [i] Install"
+        echo "  [u] Uninstall"
+        echo "  [r] Reinstall"
+        read -rp "Choice [i/u/r]: " response || exit 1
+        if ACTION="$(normalize_action "${response}")"; then
+            break
+        fi
+        print_warn "Invalid choice. Please select install, uninstall, or reinstall."
+    done
+}
+
+perform_install() {
 print_info "Installing Clean Ollama Proxy for macOS..."
 
 # Stop existing launchd job if present
@@ -79,8 +144,8 @@ if ! command -v brew >/dev/null 2>&1; then
 fi
 
 print_info "Installing dependencies via Homebrew (Go, SQLite)..."
-brew update >/dev/null
-brew install go sqlite3 >/dev/null 2>&1 || true
+run_brew update >/dev/null
+run_brew install go sqlite3 >/dev/null 2>&1 || true
 
 if ! command -v ollama >/dev/null 2>&1; then
     print_warn "Ollama CLI not found. Installing via official script..."
@@ -632,3 +697,27 @@ echo "Proxy:   http://localhost:${PROXY_PORT}"
 echo "Dashboard: http://localhost:${PROXY_PORT}/dashboard"
 echo ""
 echo "Use 'launchctl print system/${SERVICE_LABEL}' to inspect status."
+}
+
+ACTION="${1:-}"
+if [[ -n "${ACTION}" ]]; then
+    if ! ACTION="$(normalize_action "${ACTION}")"; then
+        print_error "Unknown action '${1}'. Use install, uninstall, or reinstall."
+        exit 1
+    fi
+else
+    prompt_for_action
+fi
+
+case "${ACTION}" in
+    install)
+        perform_install
+        ;;
+    uninstall)
+        perform_uninstall
+        ;;
+    reinstall)
+        perform_uninstall
+        perform_install
+        ;;
+esac
