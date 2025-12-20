@@ -869,13 +869,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory="${INSTALL_DIR}"
+WorkingDirectory=${INSTALL_DIR}
 Environment="PROXY_PORT=${PROXY_PORT}"
 Environment="OLLAMA_BACKEND_PORT=${BACKEND_PORT}"
 Environment="ANALYTICS_DB=${ANALYTICS_DIR}/ollama_analytics.db"
 Environment="DASHBOARD_FILE=${DASHBOARD_FILE}"
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
-ExecStart="${INSTALL_DIR}/ollama-proxy"
+ExecStart=${INSTALL_DIR}/ollama-proxy
 Restart=always
 RestartSec=10s
 
