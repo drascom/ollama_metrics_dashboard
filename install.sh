@@ -137,6 +137,8 @@ cat > main.go << 'GOEOF'
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -222,6 +224,12 @@ type RequestData struct {
 	Status       string    `json:"status"`
 	ClientIP     string    `json:"clientIp"`
 	TokensPerSec float64   `json:"tokensPerSec"`
+	TotalDuration       int64 `json:"totalDuration"`
+	LoadDuration        int64 `json:"loadDuration"`
+	PromptEvalCount     int   `json:"promptEvalCount"`
+	PromptEvalDuration  int64 `json:"promptEvalDuration"`
+	EvalCount           int   `json:"evalCount"`
+	EvalDuration        int64 `json:"evalDuration"`
 }
 
 func init() {
@@ -380,7 +388,7 @@ func handleProxy(w http.ResponseWriter, r *http.Request, proxy *httputil.Reverse
 	var requestBody []byte
 	if r.Body != nil {
 		requestBody, _ = io.ReadAll(r.Body)
-		r.Body = io.NopCloser(strings.NewReader(string(requestBody)))
+		r.Body = io.NopCloser(bytes.NewReader(requestBody))
 	}
 
 	isInference := strings.HasPrefix(r.URL.Path, "/api/generate") || 
@@ -392,25 +400,77 @@ func handleProxy(w http.ResponseWriter, r *http.Request, proxy *httputil.Reverse
 
 	if isInference {
 		duration := time.Since(start).Seconds()
-		
+
 		var data RequestData
-		json.Unmarshal(requestBody, &data)
-		
+		if len(requestBody) > 0 {
+			json.Unmarshal(requestBody, &data)
+		}
+
+		metrics := parseOllamaResponse(rw.Body())
+		if metrics != nil {
+			if metrics.Model != "" {
+				data.Model = metrics.Model
+			}
+			if metrics.Response != "" {
+				data.Response = metrics.Response
+			}
+			if metrics.PromptEvalCount > 0 {
+				data.InputTokens = metrics.PromptEvalCount
+			}
+			if metrics.PromptEvalDuration > 0 {
+				data.PromptEvalDuration = metrics.PromptEvalDuration
+			}
+			if metrics.EvalCount > 0 {
+				data.OutputTokens = metrics.EvalCount
+			}
+			if metrics.EvalDuration > 0 {
+				data.EvalDuration = metrics.EvalDuration
+			}
+			if metrics.TotalDuration > 0 {
+				data.TotalDuration = metrics.TotalDuration
+			}
+			if metrics.LoadDuration > 0 {
+				data.LoadDuration = metrics.LoadDuration
+			}
+			if metrics.Response != "" && data.Response == "" {
+				data.Response = metrics.Response
+			}
+			if metrics.PromptEvalCount > 0 {
+				data.PromptEvalCount = metrics.PromptEvalCount
+			}
+		}
+
 		model := data.Model
 		if model == "" {
 			model = "unknown"
 		}
 
 		status := fmt.Sprintf("%d", rw.statusCode)
-		
+
 		requestsTotal.WithLabelValues(model, r.URL.Path, status).Inc()
 		requestDuration.WithLabelValues(model, r.URL.Path).Observe(duration)
+
+		if data.OutputTokens > 0 {
+			tokensGenerated.WithLabelValues(model).Observe(float64(data.OutputTokens))
+		}
 
 		data.Timestamp = start
 		data.Endpoint = r.URL.Path
 		data.Latency = duration
 		data.Status = status
 		data.ClientIP = r.RemoteAddr
+
+		if data.TokensPerSec == 0 && data.OutputTokens > 0 {
+			var divisor float64
+			if data.EvalDuration > 0 {
+				divisor = float64(data.EvalDuration) / float64(time.Second)
+			} else {
+				divisor = duration
+			}
+			if divisor > 0 {
+				data.TokensPerSec = float64(data.OutputTokens) / divisor
+			}
+		}
 
 		go analytics.Store(data)
 	}
@@ -658,6 +718,13 @@ fi
 
 # Create systemd service
 print_info "Creating systemd service..."
+SYSTEMD_WORKDIR_ESCAPED="${INSTALL_DIR}"
+if command -v systemd-escape >/dev/null 2>&1; then
+    SYSTEMD_WORKDIR_ESCAPED=$(systemd-escape --path "${INSTALL_DIR}")
+else
+    SYSTEMD_WORKDIR_ESCAPED=$(printf '%s' "${INSTALL_DIR}" | sed 's/\\/\\\\/g; s/ /\\x20/g')
+fi
+SYSTEMD_EXEC_ESCAPED="${SYSTEMD_WORKDIR_ESCAPED}/ollama-proxy"
 cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
 [Unit]
 Description=Ollama Proxy Service
@@ -667,13 +734,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory="${INSTALL_DIR}"
+WorkingDirectory=${SYSTEMD_WORKDIR_ESCAPED}
 Environment="PROXY_PORT=${PROXY_PORT}"
 Environment="OLLAMA_BACKEND_PORT=${BACKEND_PORT}"
 Environment="ANALYTICS_DB=${ANALYTICS_DIR}/ollama_analytics.db"
 Environment="DASHBOARD_FILE=${DASHBOARD_FILE}"
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
-ExecStart="${INSTALL_DIR}/ollama-proxy"
+ExecStart=${SYSTEMD_EXEC_ESCAPED}
 Restart=always
 RestartSec=10s
 
