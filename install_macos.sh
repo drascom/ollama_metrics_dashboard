@@ -32,6 +32,11 @@ if [[ -z "${ORIGINAL_USER}" || "${ORIGINAL_USER}" == "root" ]]; then
     print_error "Run this script via sudo from a non-root user so Homebrew can run safely"
     exit 1
 fi
+ORIGINAL_HOME="$(eval echo "~${ORIGINAL_USER}")"
+if [[ -z "${ORIGINAL_HOME}" || ! -d "${ORIGINAL_HOME}" ]]; then
+    print_error "Unable to determine home directory for ${ORIGINAL_USER}"
+    exit 1
+fi
 
 run_brew() {
     sudo -u "${ORIGINAL_USER}" -H \
@@ -887,6 +892,8 @@ cat > "${PLIST_PATH}" <<EOF
         <key>DASHBOARD_FILE</key><string>${DASHBOARD_FILE}</string>
         <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>HOME</key><string>/var/root</string>
+        <key>OLLAMA_HOME</key><string>${ORIGINAL_HOME}/.ollama</string>
+        <key>OLLAMA_MODELS</key><string>${ORIGINAL_HOME}/.ollama</string>
     </dict>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
