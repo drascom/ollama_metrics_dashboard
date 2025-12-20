@@ -232,6 +232,29 @@ type RequestData struct {
 	EvalDuration        int64 `json:"evalDuration"`
 }
 
+type responseMetrics struct {
+	Model              string
+	Response           string
+	TotalDuration      int64
+	LoadDuration       int64
+	PromptEvalCount    int
+	PromptEvalDuration int64
+	EvalCount          int
+	EvalDuration       int64
+}
+
+type ollamaChunk struct {
+	Model              string `json:"model"`
+	Response           string `json:"response"`
+	Done               bool   `json:"done"`
+	TotalDuration      int64  `json:"total_duration"`
+	LoadDuration       int64  `json:"load_duration"`
+	PromptEvalCount    int    `json:"prompt_eval_count"`
+	PromptEvalDuration int64  `json:"prompt_eval_duration"`
+	EvalCount          int    `json:"eval_count"`
+	EvalDuration       int64  `json:"eval_duration"`
+}
+
 func init() {
 	prometheus.MustRegister(requestsTotal)
 	prometheus.MustRegister(requestDuration)
@@ -476,6 +499,91 @@ func handleProxy(w http.ResponseWriter, r *http.Request, proxy *httputil.Reverse
 	}
 }
 
+func parseOllamaResponse(body []byte) *responseMetrics {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil
+	}
+
+	var (
+		lastChunk  ollamaChunk
+		haveChunk  bool
+		modelName  string
+		respBuffer strings.Builder
+	)
+
+	scanner := bufio.NewScanner(bytes.NewReader(body))
+	buf := make([]byte, 0, 128*1024)
+	scanner.Buffer(buf, 4*1024*1024)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			line = strings.TrimSpace(line[5:])
+			if line == "" {
+				continue
+			}
+		}
+
+		var chunk ollamaChunk
+		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+			continue
+		}
+
+		if chunk.Model != "" {
+			modelName = chunk.Model
+		}
+		if chunk.Response != "" {
+			respBuffer.WriteString(chunk.Response)
+		}
+
+		lastChunk = chunk
+		haveChunk = true
+	}
+
+	if !haveChunk {
+		var chunk ollamaChunk
+		if err := json.Unmarshal(body, &chunk); err != nil {
+			return nil
+		}
+		if chunk.Model != "" {
+			modelName = chunk.Model
+		}
+		if chunk.Response != "" {
+			respBuffer.WriteString(chunk.Response)
+		}
+		lastChunk = chunk
+		haveChunk = true
+	}
+
+	if !haveChunk {
+		return nil
+	}
+
+	if modelName == "" {
+		modelName = lastChunk.Model
+	}
+
+	responseText := respBuffer.String()
+	if responseText == "" && lastChunk.Response != "" {
+		responseText = lastChunk.Response
+	}
+
+	return &responseMetrics{
+		Model:              modelName,
+		Response:           responseText,
+		TotalDuration:      lastChunk.TotalDuration,
+		LoadDuration:       lastChunk.LoadDuration,
+		PromptEvalCount:    lastChunk.PromptEvalCount,
+		PromptEvalDuration: lastChunk.PromptEvalDuration,
+		EvalCount:          lastChunk.EvalCount,
+		EvalDuration:       lastChunk.EvalDuration,
+	}
+}
+
 func initAnalytics(dbPath string) (*Analytics, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return nil, err
@@ -499,7 +607,13 @@ func initAnalytics(dbPath string) (*Analytics, error) {
 		latency REAL,
 		status TEXT,
 		client_ip TEXT,
-		tokens_per_sec REAL
+		tokens_per_sec REAL,
+		total_duration INTEGER,
+		load_duration INTEGER,
+		prompt_eval_count INTEGER,
+		prompt_eval_duration INTEGER,
+		eval_count INTEGER,
+		eval_duration INTEGER
 	);
 	CREATE INDEX IF NOT EXISTS idx_timestamp ON requests(timestamp);
 	CREATE INDEX IF NOT EXISTS idx_model ON requests(model);
@@ -518,14 +632,18 @@ func (a *Analytics) Store(data RequestData) error {
 
 	query := `
 		INSERT INTO requests (timestamp, model, endpoint, prompt, response, 
-			input_tokens, output_tokens, latency, status, client_ip, tokens_per_sec)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			input_tokens, output_tokens, latency, status, client_ip, tokens_per_sec,
+			total_duration, load_duration, prompt_eval_count, prompt_eval_duration,
+			eval_count, eval_duration)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := a.db.Exec(query, data.Timestamp, data.Model, data.Endpoint,
 		truncate(data.Prompt, 500), truncate(data.Response, 500),
 		data.InputTokens, data.OutputTokens, data.Latency,
-		data.Status, data.ClientIP, data.TokensPerSec)
+		data.Status, data.ClientIP, data.TokensPerSec,
+		data.TotalDuration, data.LoadDuration, data.PromptEvalCount,
+		data.PromptEvalDuration, data.EvalCount, data.EvalDuration)
 
 	return err
 }
@@ -573,7 +691,9 @@ func (a *Analytics) GetRecent(limit int) ([]RequestData, error) {
 
 	query := `
 		SELECT timestamp, model, endpoint, prompt, response,
-		       input_tokens, output_tokens, latency, status, client_ip, tokens_per_sec
+		       input_tokens, output_tokens, latency, status, client_ip, tokens_per_sec,
+		       total_duration, load_duration, prompt_eval_count, prompt_eval_duration,
+		       eval_count, eval_duration
 		FROM requests
 		ORDER BY timestamp DESC
 		LIMIT ?
@@ -603,6 +723,12 @@ func (a *Analytics) GetRecent(limit int) ([]RequestData, error) {
 			&entry.Status,
 			&entry.ClientIP,
 			&entry.TokensPerSec,
+			&entry.TotalDuration,
+			&entry.LoadDuration,
+			&entry.PromptEvalCount,
+			&entry.PromptEvalDuration,
+			&entry.EvalCount,
+			&entry.EvalDuration,
 		); err != nil {
 			return nil, err
 		}
@@ -649,11 +775,27 @@ func handleRecent(w http.ResponseWriter, r *http.Request, analytics *Analytics) 
 type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
+	body       bytes.Buffer
 }
 
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	rw.body.Write(b)
+	return rw.ResponseWriter.Write(b)
+}
+
+func (rw *responseWriter) Body() []byte {
+	return rw.body.Bytes()
+}
+
+func (rw *responseWriter) Flush() {
+	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 func getEnv(key, defaultValue string) string {

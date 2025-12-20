@@ -100,6 +100,9 @@
         .token-box { background: rgba(255,255,255,0.03); padding: 12px 14px; border-radius: 12px; }
         .token-box span { font-size: 0.85rem; color: var(--muted); }
         .token-box strong { font-size: 1.3rem; display: block; margin-top: 6px; }
+        .metric-stack { display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; color: var(--muted); }
+        .metric-stack strong { color: var(--text); font-size: 1rem; margin-right: 6px; }
+        .response-snippet { font-size: 0.85rem; color: var(--muted); max-height: 3.6em; overflow: hidden; white-space: pre-line; }
         .loading, .error { text-align: center; padding: 38px; border-radius: 18px; margin-top: 30px; font-size: 1.1rem; }
         .loading { background: rgba(255,255,255,0.07); }
         .error { background: rgba(255,107,107,0.15); color: var(--danger); }
@@ -197,7 +200,9 @@
                                     <th>Endpoint</th>
                                     <th>Latency</th>
                                     <th>Tokens</th>
+                                    <th>Durations</th>
                                     <th>Status</th>
+                                    <th>Response</th>
                                 </tr>
                             </thead>
                             <tbody id="recentTable"></tbody>
@@ -228,6 +233,19 @@
         if (diff < 60) return `${Math.max(0, diff).toFixed(0)}s ago`;
         if (diff < 3600) return `${Math.floor(diff / 60)}m ${Math.floor(diff % 60)}s ago`;
         return date.toLocaleTimeString();
+    }
+
+    function escapeHTML(str) {
+        if (!str) return '';
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+        return String(str).replace(/[&<>"']/g, (char) => map[char]);
+    }
+
+    function formatDurationNs(ns) {
+        if (!ns || ns <= 0) return '-';
+        const seconds = ns / 1e9;
+        if (seconds < 1) return `${(seconds * 1000).toFixed(1)} ms`;
+        return `${seconds.toFixed(2)} s`;
     }
 
     function parsePrometheus(text) {
@@ -458,22 +476,43 @@
         const table = document.getElementById('recentTable');
         table.innerHTML = '';
         if (!entries || !entries.length) {
-            table.innerHTML = '<tr><td colspan="6">Waiting for activity...</td></tr>';
+            table.innerHTML = '<tr><td colspan="8">Waiting for activity...</td></tr>';
             return;
         }
         entries.forEach((entry) => {
             const pillClass = entry.status && entry.status.startsWith('2')
                 ? 'status-success'
                 : (entry.status && (entry.status.startsWith('4') || entry.status.startsWith('5')) ? 'status-fail' : 'status-other');
-            const tokens = formatNumber(entry.outputTokens || 0) + ' (' + formatNumber(entry.tokensPerSec || 0, 1) + ' tok/s)';
+            const model = escapeHTML(entry.model || 'unknown');
+            const endpoint = escapeHTML(entry.endpoint || '-');
+            const statusLabel = escapeHTML(entry.status || '-');
+            const tokens = `
+                <div class="metric-stack">
+                    <span><strong>${formatNumber(entry.outputTokens || 0)}</strong> out</span>
+                    <span>Prompt: ${formatNumber(entry.inputTokens || 0)}</span>
+                    <span>${formatNumber(entry.tokensPerSec || 0, 1)} tok/s</span>
+                </div>`;
+            const durations = `
+                <div class="metric-stack">
+                    <span>Total: <strong>${formatDurationNs(entry.totalDuration || 0)}</strong></span>
+                    <span>Load: ${formatDurationNs(entry.loadDuration || 0)}</span>
+                    <span>Prompt: ${formatDurationNs(entry.promptEvalDuration || 0)}</span>
+                    <span>Eval: ${formatDurationNs(entry.evalDuration || 0)}</span>
+                </div>`;
+            const responseSnippet = entry.response
+                ? `<div class="response-snippet">${escapeHTML(entry.response)}</div>`
+                : '<div class="response-snippet">-</div>';
             const row = document.createElement('tr');
-            row.innerHTML = '' +
-                '<td>' + formatTimeAgo(entry.timestamp) + '</td>' +
-                '<td>' + (entry.model || 'unknown') + '</td>' +
-                '<td>' + (entry.endpoint || '-') + '</td>' +
-                '<td>' + formatNumber(entry.latency || 0, 2) + 's</td>' +
-                '<td>' + tokens + '</td>' +
-                '<td><span class="status-pill ' + pillClass + '">' + (entry.status || '-') + '</span></td>';
+            const timeAgo = formatTimeAgo(entry.timestamp);
+            row.innerHTML = `
+                <td>${timeAgo}</td>
+                <td>${model}</td>
+                <td>${endpoint}</td>
+                <td>${formatNumber(entry.latency || 0, 2)}s</td>
+                <td>${tokens}</td>
+                <td>${durations}</td>
+                <td><span class="status-pill ${pillClass}">${statusLabel}</span></td>
+                <td>${responseSnippet}</td>`;
             table.appendChild(row);
         });
     }
