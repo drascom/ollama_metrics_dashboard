@@ -27,7 +27,8 @@ if [[ "$EUID" -ne 0 ]]; then
     exit 1
 fi
 
-INSTALL_DIR="/usr/local/ollama-metrics"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_DIR="${SCRIPT_DIR}"
 ANALYTICS_DIR="${INSTALL_DIR}/analytics"
 LOG_DIR="${INSTALL_DIR}/logs"
 BIN_PATH="${INSTALL_DIR}/ollama-proxy"
@@ -35,7 +36,6 @@ SERVICE_LABEL="com.ollama.metrics"
 PLIST_PATH="/Library/LaunchDaemons/${SERVICE_LABEL}.plist"
 PROXY_PORT="11434"
 BACKEND_PORT="11435"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DASHBOARD_FILE="${INSTALL_DIR}/dashboard.html"
 
 print_info "Installing Clean Ollama Proxy for macOS..."
@@ -63,7 +63,8 @@ for port in "${PROXY_PORT}" "${BACKEND_PORT}"; do
 done
 
 print_info "Preparing install directories..."
-rm -rf "${INSTALL_DIR}"
+rm -f "${INSTALL_DIR}/ollama-proxy" "${INSTALL_DIR}/main.go" "${INSTALL_DIR}/go.mod" "${INSTALL_DIR}/go.sum"
+rm -rf "${ANALYTICS_DIR}"
 mkdir -p "${ANALYTICS_DIR}" "${LOG_DIR}"
 chmod 755 "${INSTALL_DIR}"
 
@@ -71,7 +72,6 @@ if [[ ! -f "${SCRIPT_DIR}/dashboard.html" ]]; then
     print_error "dashboard.html not found next to install_macos.sh"
     exit 1
 fi
-cp "${SCRIPT_DIR}/dashboard.html" "${DASHBOARD_FILE}"
 
 if ! command -v brew >/dev/null 2>&1; then
     print_error "Homebrew is required. Install from https://brew.sh and rerun."

@@ -452,6 +452,7 @@
 			'	</div>' +
 			'</div>' +
 		'<div style="margin-top:16px;">' + (models || 'No historical data yet.') + '</div>';
+    }
 
     function renderRecent(entries) {
         const table = document.getElementById('recentTable');
@@ -475,7 +476,6 @@
                 '<td><span class="status-pill ' + pillClass + '">' + (entry.status || '-') + '</span></td>';
             table.appendChild(row);
         });
-    }
     }
 
     loadDashboard();

@@ -1,3 +1,7 @@
+# Please do not use yet ! It is not ready i am updating constantly.
+
+
+
 # Clean Ollama Proxy Installer (Linux)
 
 Clean Ollama Proxy is a single-file installation experience that builds and deploys an Ollama reverse proxy/analytics service on Debian or Ubuntu. It wraps `ollama serve`, adds Prometheus metrics and a lightweight dashboard, and runs everything as a managed `systemd` service at `/root/ollama-metrics`.

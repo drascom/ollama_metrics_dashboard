@@ -15,12 +15,12 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Configuration
-INSTALL_DIR="/root/ollama-metrics"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_DIR="${SCRIPT_DIR}"
 SERVICE_NAME="ollama-proxy"
 PROXY_PORT="11434"
 BACKEND_PORT="11435"
 ANALYTICS_DIR="${INSTALL_DIR}/analytics"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DASHBOARD_FILE="${INSTALL_DIR}/dashboard.html"
 
 print_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
@@ -88,11 +88,10 @@ if [ -f /etc/systemd/system/ollama-proxy.service ]; then
     systemctl daemon-reload
 fi
 
-# Clean old installation directory
-if [ -d "${INSTALL_DIR}" ]; then
-    print_info "Removing old installation directory..."
-    rm -rf "${INSTALL_DIR}"
-fi
+# Clean old build artifacts
+print_info "Cleaning previous build artifacts..."
+rm -f "${INSTALL_DIR}/ollama-proxy" "${INSTALL_DIR}/main.go" "${INSTALL_DIR}/go.mod" "${INSTALL_DIR}/go.sum"
+rm -rf "${ANALYTICS_DIR}"
 
 print_info "Cleanup complete. Starting fresh installation..."
 echo ""
@@ -131,7 +130,6 @@ if [ ! -f "${SCRIPT_DIR}/dashboard.html" ]; then
     print_error "dashboard.html not found next to install.sh"
     exit 1
 fi
-cp "${SCRIPT_DIR}/dashboard.html" "${DASHBOARD_FILE}"
 
 # Create the Go application
 print_info "Creating ollama-proxy application..."
@@ -152,6 +150,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -166,8 +165,8 @@ import (
 const (
 	defaultProxyPort     = "11434"
 	defaultBackendPort   = "11435"
-	defaultAnalyticsDB   = "/root/ollama-metrics/analytics/ollama_analytics.db"
-	defaultDashboardFile = "/root/ollama-metrics/dashboard.html"
+	defaultAnalyticsDB   = "analytics/ollama_analytics.db"
+	defaultDashboardFile = "dashboard.html"
 	defaultRecentLimit   = 25
 )
 
@@ -212,17 +211,17 @@ type Analytics struct {
 }
 
 type RequestData struct {
-	Timestamp      time.Time
-	Model          string
-	Endpoint       string
-	Prompt         string
-	Response       string
-	InputTokens    int
-	OutputTokens   int
-	Latency        float64
-	Status         string
-	ClientIP       string
-	TokensPerSec   float64
+	Timestamp    time.Time `json:"timestamp"`
+	Model        string    `json:"model"`
+	Endpoint     string    `json:"endpoint"`
+	Prompt       string    `json:"prompt"`
+	Response     string    `json:"response"`
+	InputTokens  int       `json:"inputTokens"`
+	OutputTokens int       `json:"outputTokens"`
+	Latency      float64   `json:"latency"`
+	Status       string    `json:"status"`
+	ClientIP     string    `json:"clientIp"`
+	TokensPerSec float64   `json:"tokensPerSec"`
 }
 
 func init() {
@@ -418,7 +417,9 @@ func handleProxy(w http.ResponseWriter, r *http.Request, proxy *httputil.Reverse
 }
 
 func initAnalytics(dbPath string) (*Analytics, error) {
-	os.MkdirAll(strings.TrimSuffix(dbPath, "/ollama_analytics.db"), 0755)
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return nil, err
+	}
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -639,7 +640,7 @@ echo "Memory:"
 free -h
 echo ""
 echo "Disk:"
-df -h ${INSTALL_DIR}
+df -h "${INSTALL_DIR}"
 echo ""
 
 # Check for OOM killer activity
@@ -666,13 +667,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=${INSTALL_DIR}
+WorkingDirectory="${INSTALL_DIR}"
 Environment="PROXY_PORT=${PROXY_PORT}"
 Environment="OLLAMA_BACKEND_PORT=${BACKEND_PORT}"
 Environment="ANALYTICS_DB=${ANALYTICS_DIR}/ollama_analytics.db"
 Environment="DASHBOARD_FILE=${DASHBOARD_FILE}"
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
-ExecStart=${INSTALL_DIR}/ollama-proxy
+ExecStart="${INSTALL_DIR}/ollama-proxy"
 Restart=always
 RestartSec=10s
 
@@ -698,7 +699,7 @@ print_info "Testing binary directly (not in background)..."
 echo "If this hangs, press Ctrl+C after 3 seconds..."
 
 # Run in foreground for a moment to see actual output
-timeout 3s ${INSTALL_DIR}/ollama-proxy 2>&1 | head -20 || true
+timeout 3s "${INSTALL_DIR}/ollama-proxy" 2>&1 | head -20 || true
 
 echo ""
 print_info "Checking dmesg for OOM or security kills..."
@@ -717,7 +718,7 @@ print_info "Installing strace for debugging..."
 apt-get install -y strace > /dev/null 2>&1 || true
 
 print_info "Testing with strace to see system calls..."
-timeout 3s strace -e trace=signal ${INSTALL_DIR}/ollama-proxy 2>&1 | tail -20 || true
+timeout 3s strace -e trace=signal "${INSTALL_DIR}/ollama-proxy" 2>&1 | tail -20 || true
 
 # Enable and start
 print_info "Starting systemd service..."
@@ -758,7 +759,7 @@ else
     netstat -tlnp | grep -E "(11434|11435)" || echo "No conflicts found"
     echo ""
     print_warn "Try running manually to see errors:"
-    echo "  cd ${INSTALL_DIR}"
+    echo "  cd \"${INSTALL_DIR}\""
     echo "  ./ollama-proxy"
     exit 1
 fi
