@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,7 +16,11 @@
             --success: #2ec4b6;
             --danger: #ff6b6b;
         }
-        * { box-sizing: border-box; }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             margin: 0;
@@ -24,15 +29,21 @@
             color: var(--text);
             padding: 32px;
         }
-        .container { max-width: 1400px; margin: 0 auto; }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
         .header {
             background: linear-gradient(135deg, rgba(98, 227, 255, 0.2), rgba(120, 99, 255, 0.2));
             padding: 28px;
             border-radius: 20px;
-            border: 1px solid rgba(255,255,255,0.08);
-            box-shadow: 0 25px 65px rgba(5,7,20,0.45);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 25px 65px rgba(5, 7, 20, 0.45);
             margin-bottom: 28px;
         }
+
         .header h1 {
             font-size: 2.4rem;
             margin: 0 0 8px;
@@ -40,84 +51,278 @@
             gap: 12px;
             align-items: center;
         }
-        .header p { margin: 0; color: var(--muted); }
-        .meta { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 18px; align-items: center; }
+
+        .header p {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 18px;
+            align-items: center;
+        }
+
         .pill {
             border-radius: 999px;
             padding: 8px 16px;
-            background: rgba(255,255,255,0.08);
+            background: rgba(255, 255, 255, 0.08);
             font-size: 0.9rem;
             color: var(--muted);
         }
+
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 20px;
             margin-bottom: 24px;
         }
+
         .stat-card {
             background: var(--panel);
             border-radius: 18px;
             padding: 24px;
-            border: 1px solid rgba(255,255,255,0.04);
+            border: 1px solid rgba(255, 255, 255, 0.04);
             position: relative;
             overflow: hidden;
         }
+
         .stat-card::after {
             content: "";
             position: absolute;
             inset: 0;
-            background: radial-gradient(circle at top right, rgba(98,227,255,0.15), transparent 55%);
+            background: radial-gradient(circle at top right, rgba(98, 227, 255, 0.15), transparent 55%);
             pointer-events: none;
         }
-        .stat-card h3 { margin: 0; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-        .stat-value { font-size: 2.5rem; font-weight: 700; margin: 14px 0 4px; }
-        .stat-subtle { color: var(--muted); font-size: 0.9rem; }
-        .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 24px; }
+
+        .stat-card h3 {
+            margin: 0;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin: 14px 0 4px;
+        }
+
+        .stat-subtle {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .panels {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
         .panel {
             background: var(--panel);
             border-radius: 18px;
             padding: 24px;
-            border: 1px solid rgba(255,255,255,0.05);
+            border: 1px solid rgba(255, 255, 255, 0.05);
             min-height: 200px;
         }
-        .panel h2 { margin: 0 0 18px; font-size: 1.2rem; letter-spacing: 0.02em; }
-        .panel-full { width: 100%; margin-bottom: 24px; }
-        .model-list { display: flex; flex-direction: column; gap: 12px; }
-        .model-row { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 12px 16px; border-radius: 14px; }
-        .model-row strong { font-size: 1.05rem; }
-        progress { width: 100%; height: 8px; border-radius: 999px; background: rgba(255,255,255,0.08); }
-        progress::-webkit-progress-bar { background: rgba(255,255,255,0.08); border-radius: 999px; }
-        progress::-webkit-progress-value { background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 999px; }
-        table { width: 100%; border-collapse: collapse; color: var(--text); }
-        th, td { padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); text-align: left; }
-        th { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-        tbody tr:hover { background: rgba(255,255,255,0.02); }
-        .status-pill { padding: 4px 10px; border-radius: 999px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; }
-        .status-success { background: rgba(46,196,182,0.2); color: var(--success); }
-        .status-fail { background: rgba(255,107,107,0.18); color: var(--danger); }
-        .status-other { background: rgba(255,255,255,0.1); color: var(--text); }
-        .token-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
-        .token-box { background: rgba(255,255,255,0.03); padding: 12px 14px; border-radius: 12px; }
-        .token-box span { font-size: 0.85rem; color: var(--muted); }
-        .token-box strong { font-size: 1.3rem; display: block; margin-top: 6px; }
-        .metric-stack { display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; color: var(--muted); }
-        .metric-stack strong { color: var(--text); font-size: 1rem; margin-right: 6px; }
-        .response-snippet { font-size: 0.85rem; color: var(--muted); max-height: 3.6em; overflow: hidden; white-space: pre-line; }
-        .loading, .error { text-align: center; padding: 38px; border-radius: 18px; margin-top: 30px; font-size: 1.1rem; }
-        .loading { background: rgba(255,255,255,0.07); }
-        .error { background: rgba(255,107,107,0.15); color: var(--danger); }
-        .live-table { max-height: 360px; overflow-y: auto; }
+
+        .panel h2 {
+            margin: 0 0 18px;
+            font-size: 1.2rem;
+            letter-spacing: 0.02em;
+        }
+
+        .panel-full {
+            width: 100%;
+            margin-bottom: 24px;
+        }
+
+        .model-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .model-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.02);
+            padding: 12px 16px;
+            border-radius: 14px;
+        }
+
+        .model-row strong {
+            font-size: 1.05rem;
+        }
+
+        progress {
+            width: 100%;
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        progress::-webkit-progress-bar {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 999px;
+        }
+
+        progress::-webkit-progress-value {
+            background: linear-gradient(90deg, var(--accent), var(--accent-2));
+            border-radius: 999px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            color: var(--text);
+        }
+
+        th,
+        td {
+            padding: 10px 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            text-align: left;
+        }
+
+        th {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        tbody tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .status-pill {
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-success {
+            background: rgba(46, 196, 182, 0.2);
+            color: var(--success);
+        }
+
+        .status-fail {
+            background: rgba(255, 107, 107, 0.18);
+            color: var(--danger);
+        }
+
+        .status-other {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text);
+        }
+
+        .token-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+        }
+
+        .token-box {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 12px 14px;
+            border-radius: 12px;
+        }
+
+        .token-box span {
+            font-size: 0.85rem;
+            color: var(--muted);
+        }
+
+        .token-box strong {
+            font-size: 1.3rem;
+            display: block;
+            margin-top: 6px;
+        }
+
+        .metric-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 0.85rem;
+            color: var(--muted);
+        }
+
+        .metric-stack strong {
+            color: var(--text);
+            font-size: 1rem;
+            margin-right: 6px;
+        }
+
+        .response-snippet {
+            font-size: 0.85rem;
+            color: var(--muted);
+            max-height: 3.6em;
+            overflow: hidden;
+            white-space: pre-line;
+        }
+
+        .loading,
+        .error {
+            text-align: center;
+            padding: 38px;
+            border-radius: 18px;
+            margin-top: 30px;
+            font-size: 1.1rem;
+        }
+
+        .loading {
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        .error {
+            background: rgba(255, 107, 107, 0.15);
+            color: var(--danger);
+        }
+
+        .live-table {
+            max-height: 360px;
+            overflow-y: auto;
+        }
+
         button.refresh {
             background: linear-gradient(120deg, var(--accent), var(--accent-2));
-            border: none; color: #050714; padding: 10px 22px;
-            font-weight: 600; border-radius: 999px;
-            cursor: pointer; transition: transform 0.2s ease;
+            border: none;
+            color: #050714;
+            padding: 10px 22px;
+            font-weight: 600;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
         }
-        button.refresh:hover { transform: translateY(-2px); }
-        @media (max-width: 720px) { body { padding: 20px; } .header h1 { font-size: 1.8rem; flex-direction: column; align-items: flex-start; } }
+
+        button.refresh:hover {
+            transform: translateY(-2px);
+        }
+
+        @media (max-width: 720px) {
+            body {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 1.8rem;
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -158,29 +363,6 @@
                     <div class="stat-subtle" id="statTokensRate">0 tok/s</div>
                 </div>
             </div>
-
-            <div class="panels">
-                <section class="panel">
-                    <h2>Model Usage</h2>
-                    <div class="model-list" id="modelList"></div>
-                </section>
-                <section class="panel">
-                    <h2>Endpoint & Status Matrix</h2>
-                    <div class="table-wrapper">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Endpoint</th>
-                                    <th>Status</th>
-                                    <th>Requests</th>
-                                </tr>
-                            </thead>
-                            <tbody id="endpointTable"></tbody>
-                        </table>
-                    </div>
-                </section>
-            </div>
-
             <section class="panel panel-full">
                 <h2>Live Request Feed</h2>
                 <div class="table-wrapper live-table">
@@ -204,6 +386,29 @@
 
             <div class="panels">
                 <section class="panel">
+                    <h2>Model Usage</h2>
+                    <div class="model-list" id="modelList"></div>
+                </section>
+                <section class="panel">
+                    <h2>Endpoint & Status Matrix</h2>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Endpoint</th>
+                                    <th>Status</th>
+                                    <th>Requests</th>
+                                </tr>
+                            </thead>
+                            <tbody id="endpointTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+
+            <div class="panels">
+                <section class="panel">
                     <h2>Latency by Model</h2>
                     <div class="model-list" id="latencyList"></div>
                 </section>
@@ -221,258 +426,258 @@
     </div>
 
     <script>
-    const REFRESH_INTERVAL = 5000;
+        const REFRESH_INTERVAL = 5000;
 
-    function formatNumber(num, digits = 0) {
-        if (num === null || num === undefined || isNaN(num)) return '0';
-        return Number(num).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
-    }
-
-    function formatTimeAgo(timestamp) {
-        if (!timestamp) return '-';
-        const date = new Date(timestamp);
-        const diff = (Date.now() - date.getTime()) / 1000;
-        if (diff < 60) return `${Math.max(0, diff).toFixed(0)}s ago`;
-        if (diff < 3600) return `${Math.floor(diff / 60)}m ${Math.floor(diff % 60)}s ago`;
-        return date.toLocaleTimeString();
-    }
-
-    function escapeHTML(str) {
-        if (!str) return '';
-        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-        return String(str).replace(/[&<>"']/g, (char) => map[char]);
-    }
-
-    function formatDurationNs(ns) {
-        if (!ns || ns <= 0) return '-';
-        const seconds = ns / 1e9;
-        if (seconds < 1) return `${(seconds * 1000).toFixed(1)} ms`;
-        return `${seconds.toFixed(2)} s`;
-    }
-
-    function parsePrometheus(text) {
-        const metrics = {};
-        const linePattern = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{([^}]*)\})?\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)$/;
-        text.split('\n').forEach((raw) => {
-            const line = raw.trim();
-            if (!line || line.startsWith('#')) return;
-            const match = line.match(linePattern);
-            if (!match) return;
-            const [, name, , labelsRaw, valueRaw] = match;
-            const labels = {};
-            if (labelsRaw) {
-                labelsRaw.split(',').forEach((pair) => {
-                    const [k, v] = pair.split('=');
-                    if (k) {
-                        labels[k.trim()] = v ? v.trim().replace(/^"|"$/g, '') : '';
-                    }
-                });
-            }
-            const value = parseFloat(valueRaw);
-            if (!Number.isFinite(value)) return;
-            if (!metrics[name]) metrics[name] = [];
-            metrics[name].push({ labels, value });
-        });
-        return metrics;
-    }
-
-    function aggregateBy(key, samples) {
-        return samples.reduce((acc, sample) => {
-            const name = sample.labels[key] || 'unknown';
-            acc[name] = (acc[name] || 0) + sample.value;
-            return acc;
-        }, {});
-    }
-
-    function buildHistogramStats(sumSamples, countSamples) {
-        const sums = aggregateBy('model', sumSamples);
-        const counts = aggregateBy('model', countSamples);
-        const avg = {};
-        Object.keys(sums).forEach((model) => {
-            const total = counts[model] || 0;
-            avg[model] = total ? sums[model] / total : 0;
-        });
-        const sumAll = Object.values(sums).reduce((a, b) => a + b, 0);
-        const countAll = Object.values(counts).reduce((a, b) => a + b, 0);
-        return { sumAll, countAll, avgByModel: avg };
-    }
-
-    async function loadDashboard(manual = false) {
-        const statusNode = document.getElementById('statusMessage');
-        if (manual) {
-            statusNode.style.display = 'block';
-            statusNode.textContent = 'Refreshing…';
+        function formatNumber(num, digits = 0) {
+            if (num === null || num === undefined || isNaN(num)) return '0';
+            return Number(num).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
         }
-        try {
-            const [analyticsRes, metricsRes, recentRes] = await Promise.all([
-                fetch('/analytics').then((res) => (res.ok ? res.json() : null)).catch(() => null),
-                fetch('/metrics').then((res) => {
-                    if (!res.ok) throw new Error('Metrics endpoint unavailable');
-                    return res.text();
-                }),
-                fetch('/recent?limit=20').then((res) => (res.ok ? res.json() : [])).catch(() => [])
-            ]);
 
-            const metrics = parsePrometheus(metricsRes);
-            const requestSamples = metrics['ollama_requests_total'] || [];
-            const totalRequests = requestSamples.reduce((sum, s) => sum + s.value, 0);
-            const statusCounts = requestSamples.reduce((acc, sample) => {
-                const status = sample.labels.status || 'unknown';
-                acc[status] = (acc[status] || 0) + sample.value;
+        function formatTimeAgo(timestamp) {
+            if (!timestamp) return '-';
+            const date = new Date(timestamp);
+            const diff = (Date.now() - date.getTime()) / 1000;
+            if (diff < 60) return `${Math.max(0, diff).toFixed(0)}s ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ${Math.floor(diff % 60)}s ago`;
+            return date.toLocaleTimeString();
+        }
+
+        function escapeHTML(str) {
+            if (!str) return '';
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+            return String(str).replace(/[&<>"']/g, (char) => map[char]);
+        }
+
+        function formatDurationNs(ns) {
+            if (!ns || ns <= 0) return '-';
+            const seconds = ns / 1e9;
+            if (seconds < 1) return `${(seconds * 1000).toFixed(1)} ms`;
+            return `${seconds.toFixed(2)} s`;
+        }
+
+        function parsePrometheus(text) {
+            const metrics = {};
+            const linePattern = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{([^}]*)\})?\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)$/;
+            text.split('\n').forEach((raw) => {
+                const line = raw.trim();
+                if (!line || line.startsWith('#')) return;
+                const match = line.match(linePattern);
+                if (!match) return;
+                const [, name, , labelsRaw, valueRaw] = match;
+                const labels = {};
+                if (labelsRaw) {
+                    labelsRaw.split(',').forEach((pair) => {
+                        const [k, v] = pair.split('=');
+                        if (k) {
+                            labels[k.trim()] = v ? v.trim().replace(/^"|"$/g, '') : '';
+                        }
+                    });
+                }
+                const value = parseFloat(valueRaw);
+                if (!Number.isFinite(value)) return;
+                if (!metrics[name]) metrics[name] = [];
+                metrics[name].push({ labels, value });
+            });
+            return metrics;
+        }
+
+        function aggregateBy(key, samples) {
+            return samples.reduce((acc, sample) => {
+                const name = sample.labels[key] || 'unknown';
+                acc[name] = (acc[name] || 0) + sample.value;
                 return acc;
             }, {});
-            const success = Object.entries(statusCounts).reduce((sum, [status, value]) => {
-                return status.startsWith('2') ? sum + value : sum;
-            }, 0);
-            const failure = totalRequests - success;
-            const successRate = totalRequests ? (success / totalRequests) * 100 : 100;
-
-            document.getElementById('statTotal').textContent = formatNumber(totalRequests, 0);
-            document.getElementById('statSuccess').textContent = formatNumber(successRate, 1) + '%';
-            document.getElementById('statErrors').textContent = formatNumber(failure, 0) + ' failed';
-
-            const active = metrics['ollama_active_requests']?.[0]?.value || 0;
-            document.getElementById('statActive').textContent = formatNumber(active, 0);
-
-            const latencyStats = buildHistogramStats(
-                metrics['ollama_request_duration_seconds_sum'] || [],
-                metrics['ollama_request_duration_seconds_count'] || []
-            );
-            const avgLatency = latencyStats.countAll ? latencyStats.sumAll / latencyStats.countAll : 0;
-            document.getElementById('statLatency').textContent = formatNumber(avgLatency, 2) + 's';
-
-            const tokenStats = buildHistogramStats(
-                metrics['ollama_tokens_generated_sum'] || [],
-                metrics['ollama_tokens_generated_count'] || []
-            );
-            const avgTokens = tokenStats.countAll ? tokenStats.sumAll / tokenStats.countAll : 0;
-            const tokensPerSecond = latencyStats.sumAll ? tokenStats.sumAll / latencyStats.sumAll : 0;
-            document.getElementById('statTokens').textContent = formatNumber(avgTokens, 1);
-            document.getElementById('statTokensRate').textContent = formatNumber(tokensPerSecond, 1) + ' tok/s';
-
-            renderModelUsage(requestSamples);
-            renderEndpointMatrix(requestSamples);
-            renderLatency(latencyStats.avgByModel);
-            renderTokens(tokenStats.avgByModel);
-            renderAnalytics(analyticsRes);
-            renderRecent(recentRes);
-
-            const now = new Date();
-            document.getElementById('lastUpdated').textContent = now.toLocaleTimeString();
-            statusNode.style.display = 'none';
-            statusNode.className = 'loading';
-            document.getElementById('dashboard').style.display = 'block';
-        } catch (err) {
-            statusNode.style.display = 'block';
-            statusNode.className = 'error';
-            statusNode.textContent = 'Unable to load metrics: ' + err.message;
         }
-    }
 
-    function renderModelUsage(samples) {
-        const modelTotals = aggregateBy('model', samples);
-        const sorted = Object.entries(modelTotals).sort((a, b) => b[1] - a[1]);
-        const max = sorted.length ? sorted[0][1] : 1;
-        const container = document.getElementById('modelList');
-        container.innerHTML = '';
-        if (!sorted.length) {
-            container.innerHTML = '<div class="stat-subtle">No requests recorded yet.</div>';
-            return;
+        function buildHistogramStats(sumSamples, countSamples) {
+            const sums = aggregateBy('model', sumSamples);
+            const counts = aggregateBy('model', countSamples);
+            const avg = {};
+            Object.keys(sums).forEach((model) => {
+                const total = counts[model] || 0;
+                avg[model] = total ? sums[model] / total : 0;
+            });
+            const sumAll = Object.values(sums).reduce((a, b) => a + b, 0);
+            const countAll = Object.values(counts).reduce((a, b) => a + b, 0);
+            return { sumAll, countAll, avgByModel: avg };
         }
-		sorted.forEach(([model, value]) => {
-			const percentage = ((value / max) * 100).toFixed(1);
-			const row = document.createElement('div');
-			row.className = 'model-row';
-			row.innerHTML = "<div><strong>" + model + "</strong><div class=\"stat-subtle\">" +
-				formatNumber(value) + " requests</div></div>" +
-				"<div style=\"flex:1; margin-left:20px;\">" +
-				"<progress value=\"" + percentage + "\" max=\"100\"></progress>" +
-				"</div>";
-			container.appendChild(row);
-		});
-    }
 
-    function renderEndpointMatrix(samples) {
-        const table = document.getElementById('endpointTable');
-        table.innerHTML = '';
-        if (!samples.length) {
-            table.innerHTML = '<tr><td colspan="3">No data yet</td></tr>';
-            return;
-        }
-        const grouped = {};
-        samples.forEach((sample) => {
-            const endpoint = sample.labels.endpoint || 'unknown';
-            const status = sample.labels.status || 'unknown';
-            grouped[endpoint] = grouped[endpoint] || {};
-            grouped[endpoint][status] = (grouped[endpoint][status] || 0) + sample.value;
-        });
-		Object.keys(grouped).sort().forEach((endpoint) => {
-			Object.entries(grouped[endpoint]).sort((a, b) => b[1] - a[1]).forEach(([status, count]) => {
-				const pillClass = status.startsWith('2') ? 'status-success' : (status.startsWith('4') || status.startsWith('5') ? 'status-fail' : 'status-other');
-				const row = document.createElement('tr');
-				row.innerHTML = "<td>" + endpoint + "</td>" +
-					"<td><span class=\"status-pill " + pillClass + "\">" + status + "</span></td>" +
-					"<td>" + formatNumber(count) + "</td>";
-				table.appendChild(row);
-			});
-		});
-    }
+        async function loadDashboard(manual = false) {
+            const statusNode = document.getElementById('statusMessage');
+            if (manual) {
+                statusNode.style.display = 'block';
+                statusNode.textContent = 'Refreshing…';
+            }
+            try {
+                const [analyticsRes, metricsRes, recentRes] = await Promise.all([
+                    fetch('/analytics').then((res) => (res.ok ? res.json() : null)).catch(() => null),
+                    fetch('/metrics').then((res) => {
+                        if (!res.ok) throw new Error('Metrics endpoint unavailable');
+                        return res.text();
+                    }),
+                    fetch('/recent?limit=20').then((res) => (res.ok ? res.json() : [])).catch(() => [])
+                ]);
 
-    function renderLatency(avgByModel) {
-        const container = document.getElementById('latencyList');
-        container.innerHTML = '';
-        const entries = Object.entries(avgByModel).sort((a, b) => a[1] - b[1]);
-        if (!entries.length) {
-            container.innerHTML = '<div class="stat-subtle">Latency data will appear once requests complete.</div>';
-            return;
-        }
-		entries.forEach(([model, value]) => {
-			const row = document.createElement('div');
-			row.className = 'model-row';
-			row.innerHTML = "<div><strong>" + model + "</strong><div class=\"stat-subtle\">Avg latency</div></div>" +
-				"<div class=\"stat-value\" style=\"font-size:1.4rem;\">" + formatNumber(value, 2) + "s</div>";
-			container.appendChild(row);
-		});
-    }
+                const metrics = parsePrometheus(metricsRes);
+                const requestSamples = metrics['ollama_requests_total'] || [];
+                const totalRequests = requestSamples.reduce((sum, s) => sum + s.value, 0);
+                const statusCounts = requestSamples.reduce((acc, sample) => {
+                    const status = sample.labels.status || 'unknown';
+                    acc[status] = (acc[status] || 0) + sample.value;
+                    return acc;
+                }, {});
+                const success = Object.entries(statusCounts).reduce((sum, [status, value]) => {
+                    return status.startsWith('2') ? sum + value : sum;
+                }, 0);
+                const failure = totalRequests - success;
+                const successRate = totalRequests ? (success / totalRequests) * 100 : 100;
 
-    function renderTokens(avgTokensByModel) {
-        const container = document.getElementById('tokenSummary');
-        container.innerHTML = '';
-        const entries = Object.entries(avgTokensByModel).sort((a, b) => b[1] - a[1]);
-        if (!entries.length) {
-            container.innerHTML = '<div class="stat-subtle">Tokens are accounted once models generate output.</div>';
-            return;
-        }
-		entries.forEach(([model, value]) => {
-			const box = document.createElement('div');
-			box.className = 'token-box';
-			box.innerHTML = '<span>' + model + '</span><strong>' + formatNumber(value, 1) + '</strong><span>avg tokens / request</span>';
-			container.appendChild(box);
-		});
-    }
+                document.getElementById('statTotal').textContent = formatNumber(totalRequests, 0);
+                document.getElementById('statSuccess').textContent = formatNumber(successRate, 1) + '%';
+                document.getElementById('statErrors').textContent = formatNumber(failure, 0) + ' failed';
 
-    function renderAnalytics(payload) {
-        const node = document.getElementById('analyticsSummary');
-        if (!payload) {
-            node.textContent = 'Analytics API unavailable (database disabled or empty).';
-            return;
+                const active = metrics['ollama_active_requests']?.[0]?.value || 0;
+                document.getElementById('statActive').textContent = formatNumber(active, 0);
+
+                const latencyStats = buildHistogramStats(
+                    metrics['ollama_request_duration_seconds_sum'] || [],
+                    metrics['ollama_request_duration_seconds_count'] || []
+                );
+                const avgLatency = latencyStats.countAll ? latencyStats.sumAll / latencyStats.countAll : 0;
+                document.getElementById('statLatency').textContent = formatNumber(avgLatency, 2) + 's';
+
+                const tokenStats = buildHistogramStats(
+                    metrics['ollama_tokens_generated_sum'] || [],
+                    metrics['ollama_tokens_generated_count'] || []
+                );
+                const avgTokens = tokenStats.countAll ? tokenStats.sumAll / tokenStats.countAll : 0;
+                const tokensPerSecond = latencyStats.sumAll ? tokenStats.sumAll / latencyStats.sumAll : 0;
+                document.getElementById('statTokens').textContent = formatNumber(avgTokens, 1);
+                document.getElementById('statTokensRate').textContent = formatNumber(tokensPerSecond, 1) + ' tok/s';
+
+                renderModelUsage(requestSamples);
+                renderEndpointMatrix(requestSamples);
+                renderLatency(latencyStats.avgByModel);
+                renderTokens(tokenStats.avgByModel);
+                renderAnalytics(analyticsRes);
+                renderRecent(recentRes);
+
+                const now = new Date();
+                document.getElementById('lastUpdated').textContent = now.toLocaleTimeString();
+                statusNode.style.display = 'none';
+                statusNode.className = 'loading';
+                document.getElementById('dashboard').style.display = 'block';
+            } catch (err) {
+                statusNode.style.display = 'block';
+                statusNode.className = 'error';
+                statusNode.textContent = 'Unable to load metrics: ' + err.message;
+            }
         }
-		const models = Object.entries(payload.by_model || {}).sort((a, b) => b[1] - a[1])
-			.map(([model, count]) => '<span class="pill" style="margin-right:8px;">' + model + ': ' + formatNumber(count) + '</span>')
-			.join(' ');
-		node.innerHTML = '' +
-			'<div style="display:flex; flex-wrap:wrap; gap:16px;">' +
-			'	<div>' +
-			'		<div class="stat-subtle">Requests stored</div>' +
-			'		<div class="stat-value" style="font-size:1.4rem;">' + formatNumber(payload.total_requests || 0) + '</div>' +
-			'	</div>' +
-			'	<div>' +
-			'		<div class="stat-subtle">Avg latency (db)</div>' +
-			'		<div class="stat-value" style="font-size:1.4rem;">' + formatNumber(payload.avg_latency || 0, 3) + 's</div>' +
-			'	</div>' +
-			'</div>' +
-		'<div style="margin-top:16px;">' + (models || 'No historical data yet.') + '</div>';
-    }
+
+        function renderModelUsage(samples) {
+            const modelTotals = aggregateBy('model', samples);
+            const sorted = Object.entries(modelTotals).sort((a, b) => b[1] - a[1]);
+            const max = sorted.length ? sorted[0][1] : 1;
+            const container = document.getElementById('modelList');
+            container.innerHTML = '';
+            if (!sorted.length) {
+                container.innerHTML = '<div class="stat-subtle">No requests recorded yet.</div>';
+                return;
+            }
+            sorted.forEach(([model, value]) => {
+                const percentage = ((value / max) * 100).toFixed(1);
+                const row = document.createElement('div');
+                row.className = 'model-row';
+                row.innerHTML = "<div><strong>" + model + "</strong><div class=\"stat-subtle\">" +
+                    formatNumber(value) + " requests</div></div>" +
+                    "<div style=\"flex:1; margin-left:20px;\">" +
+                    "<progress value=\"" + percentage + "\" max=\"100\"></progress>" +
+                    "</div>";
+                container.appendChild(row);
+            });
+        }
+
+        function renderEndpointMatrix(samples) {
+            const table = document.getElementById('endpointTable');
+            table.innerHTML = '';
+            if (!samples.length) {
+                table.innerHTML = '<tr><td colspan="3">No data yet</td></tr>';
+                return;
+            }
+            const grouped = {};
+            samples.forEach((sample) => {
+                const endpoint = sample.labels.endpoint || 'unknown';
+                const status = sample.labels.status || 'unknown';
+                grouped[endpoint] = grouped[endpoint] || {};
+                grouped[endpoint][status] = (grouped[endpoint][status] || 0) + sample.value;
+            });
+            Object.keys(grouped).sort().forEach((endpoint) => {
+                Object.entries(grouped[endpoint]).sort((a, b) => b[1] - a[1]).forEach(([status, count]) => {
+                    const pillClass = status.startsWith('2') ? 'status-success' : (status.startsWith('4') || status.startsWith('5') ? 'status-fail' : 'status-other');
+                    const row = document.createElement('tr');
+                    row.innerHTML = "<td>" + endpoint + "</td>" +
+                        "<td><span class=\"status-pill " + pillClass + "\">" + status + "</span></td>" +
+                        "<td>" + formatNumber(count) + "</td>";
+                    table.appendChild(row);
+                });
+            });
+        }
+
+        function renderLatency(avgByModel) {
+            const container = document.getElementById('latencyList');
+            container.innerHTML = '';
+            const entries = Object.entries(avgByModel).sort((a, b) => a[1] - b[1]);
+            if (!entries.length) {
+                container.innerHTML = '<div class="stat-subtle">Latency data will appear once requests complete.</div>';
+                return;
+            }
+            entries.forEach(([model, value]) => {
+                const row = document.createElement('div');
+                row.className = 'model-row';
+                row.innerHTML = "<div><strong>" + model + "</strong><div class=\"stat-subtle\">Avg latency</div></div>" +
+                    "<div class=\"stat-value\" style=\"font-size:1.4rem;\">" + formatNumber(value, 2) + "s</div>";
+                container.appendChild(row);
+            });
+        }
+
+        function renderTokens(avgTokensByModel) {
+            const container = document.getElementById('tokenSummary');
+            container.innerHTML = '';
+            const entries = Object.entries(avgTokensByModel).sort((a, b) => b[1] - a[1]);
+            if (!entries.length) {
+                container.innerHTML = '<div class="stat-subtle">Tokens are accounted once models generate output.</div>';
+                return;
+            }
+            entries.forEach(([model, value]) => {
+                const box = document.createElement('div');
+                box.className = 'token-box';
+                box.innerHTML = '<span>' + model + '</span><strong>' + formatNumber(value, 1) + '</strong><span>avg tokens / request</span>';
+                container.appendChild(box);
+            });
+        }
+
+        function renderAnalytics(payload) {
+            const node = document.getElementById('analyticsSummary');
+            if (!payload) {
+                node.textContent = 'Analytics API unavailable (database disabled or empty).';
+                return;
+            }
+            const models = Object.entries(payload.by_model || {}).sort((a, b) => b[1] - a[1])
+                .map(([model, count]) => '<span class="pill" style="margin-right:8px;">' + model + ': ' + formatNumber(count) + '</span>')
+                .join(' ');
+            node.innerHTML = '' +
+                '<div style="display:flex; flex-wrap:wrap; gap:16px;">' +
+                '	<div>' +
+                '		<div class="stat-subtle">Requests stored</div>' +
+                '		<div class="stat-value" style="font-size:1.4rem;">' + formatNumber(payload.total_requests || 0) + '</div>' +
+                '	</div>' +
+                '	<div>' +
+                '		<div class="stat-subtle">Avg latency (db)</div>' +
+                '		<div class="stat-value" style="font-size:1.4rem;">' + formatNumber(payload.avg_latency || 0, 3) + 's</div>' +
+                '	</div>' +
+                '</div>' +
+                '<div style="margin-top:16px;">' + (models || 'No historical data yet.') + '</div>';
+        }
 
     function renderRecent(entries) {
         const table = document.getElementById('recentTable');
@@ -481,32 +686,39 @@
             table.innerHTML = '<tr><td colspan="8">Waiting for activity...</td></tr>';
             return;
         }
-        entries.forEach((entry) => {
+        entries
+            .slice()
+            .sort((a, b) => {
+                const aTime = new Date(a.timestamp || 0).getTime();
+                const bTime = new Date(b.timestamp || 0).getTime();
+                return bTime - aTime;
+            })
+            .forEach((entry) => {
             const pillClass = entry.status && entry.status.startsWith('2')
                 ? 'status-success'
                 : (entry.status && (entry.status.startsWith('4') || entry.status.startsWith('5')) ? 'status-fail' : 'status-other');
             const model = escapeHTML(entry.model || 'unknown');
             const endpoint = escapeHTML(entry.endpoint || '-');
-            const statusLabel = escapeHTML(entry.status || '-');
-            const tokens = `
+                const statusLabel = escapeHTML(entry.status || '-');
+                const tokens = `
                 <div class="metric-stack">
                     <span><strong>${formatNumber(entry.outputTokens || 0)}</strong> out</span>
                     <span>Prompt: ${formatNumber(entry.inputTokens || 0)}</span>
                     <span>${formatNumber(entry.tokensPerSec || 0, 1)} tok/s</span>
                 </div>`;
-            const durations = `
+                const durations = `
                 <div class="metric-stack">
                     <span>Total: <strong>${formatDurationNs(entry.totalDuration || 0)}</strong></span>
                     <span>Load: ${formatDurationNs(entry.loadDuration || 0)}</span>
                     <span>Prompt: ${formatDurationNs(entry.promptEvalDuration || 0)}</span>
                     <span>Eval: ${formatDurationNs(entry.evalDuration || 0)}</span>
                 </div>`;
-            const responseSnippet = entry.response
-                ? `<div class="response-snippet">${escapeHTML(entry.response)}</div>`
-                : '<div class="response-snippet">-</div>';
-            const row = document.createElement('tr');
-            const timeAgo = formatTimeAgo(entry.timestamp);
-            row.innerHTML = `
+                const responseSnippet = entry.response
+                    ? `<div class="response-snippet">${escapeHTML(entry.response)}</div>`
+                    : '<div class="response-snippet">-</div>';
+                const row = document.createElement('tr');
+                const timeAgo = formatTimeAgo(entry.timestamp);
+                row.innerHTML = `
                 <td>${timeAgo}</td>
                 <td>${model}</td>
                 <td>${endpoint}</td>
@@ -515,12 +727,13 @@
                 <td>${durations}</td>
                 <td><span class="status-pill ${pillClass}">${statusLabel}</span></td>
                 <td>${responseSnippet}</td>`;
-            table.appendChild(row);
-        });
+                table.appendChild(row);
+            });
     }
 
-    loadDashboard();
-    setInterval(loadDashboard, REFRESH_INTERVAL);
+        loadDashboard();
+        setInterval(loadDashboard, REFRESH_INTERVAL);
     </script>
 </body>
+
 </html>
