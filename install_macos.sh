@@ -37,6 +37,7 @@ if [[ -z "${ORIGINAL_HOME}" || ! -d "${ORIGINAL_HOME}" ]]; then
     print_error "Unable to determine home directory for ${ORIGINAL_USER}"
     exit 1
 fi
+ORIGINAL_UID="$(id -u "${ORIGINAL_USER}")"
 
 run_brew() {
     sudo -u "${ORIGINAL_USER}" -H \
@@ -117,6 +118,12 @@ prompt_for_action() {
 
 perform_install() {
 print_info "Installing Clean Ollama Proxy for macOS..."
+print_info "Disabling stock Ollama launch services..."
+if [[ -f /Library/LaunchDaemons/io.ollama.launcher.plist ]]; then
+    launchctl bootout system /Library/LaunchDaemons/io.ollama.launcher.plist >/dev/null 2>&1 || true
+    launchctl disable system/io.ollama.launcher >/dev/null 2>&1 || true
+fi
+launchctl bootout "gui/${ORIGINAL_UID}/io.ollama.launcher" >/dev/null 2>&1 || true
 
 # Stop existing launchd job if present
 if [[ -f "${PLIST_PATH}" ]]; then
@@ -912,6 +919,18 @@ launchctl enable "system/${SERVICE_LABEL}" >/dev/null 2>&1 || true
 launchctl bootstrap system "${PLIST_PATH}"
 launchctl enable "system/${SERVICE_LABEL}"
 launchctl kickstart -k "system/${SERVICE_LABEL}"
+
+PROFILE_SNIPPET_DIR="/etc/profile.d"
+if [[ -d "${PROFILE_SNIPPET_DIR}" ]]; then
+    cat > "${PROFILE_SNIPPET_DIR}/ollama-proxy.sh" <<'EOF'
+# Added by Clean Ollama Proxy installer
+export OLLAMA_HOST="http://127.0.0.1:11434"
+EOF
+    chmod 644 "${PROFILE_SNIPPET_DIR}/ollama-proxy.sh"
+    print_info "Configured /etc/profile.d/ollama-proxy.sh to route Ollama CLI traffic through the proxy"
+else
+    print_warn "Set OLLAMA_HOST=http://127.0.0.1:11434 in your shell to ensure CLI traffic hits the proxy"
+fi
 
 print_info "Installation complete!"
 echo "Service: ${SERVICE_LABEL}"
