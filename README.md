@@ -1,7 +1,7 @@
 
 # Clean Ollama Proxy Installer (Linux)
 
-Clean Ollama Proxy is a single-file installation experience that builds and deploys an Ollama reverse proxy/analytics service on Debian or Ubuntu. It wraps `ollama serve`, adds Prometheus metrics and a lightweight dashboard, and runs everything as a managed `systemd` service at `/root/ollama-metrics`.
+Clean Ollama Proxy is a single-file installation experience that builds and deploys an Ollama reverse proxy/analytics service on Debian or Ubuntu. It wraps `ollama serve`, adds Prometheus metrics and a lightweight dashboard, and runs everything as a managed `systemd` service inside the folder where you cloned this repo (e.g., `/root/ollama-metrics` if you cloned there).
 
 > Thanks to [bmeyer99](https://github.com/bmeyer99/Ollama_Proxy_Wrapper) for the Windows installer concept that inspired this Linux-focused version.
 
@@ -19,7 +19,7 @@ Requirements: a Debian/Ubuntu host with `apt`, root privileges, and internet con
   - Starts `ollama serve` on port `11435` inside the same process group.
   - Proxies requests on port `11434`, captures per-model Prometheus metrics, and stores request analytics (prompts, responses, token counts, and duration breakdowns) in SQLite (`analytics/ollama_analytics.db`).
   - Exposes `/metrics`, `/analytics`, `/dashboard`, and `/test` endpoints.
-- The project is built in `/root/ollama-metrics` and wired up to a `systemd` unit (`ollama-proxy.service`) with sane timeouts, restart policies, and logging.
+- The project is built directly inside the repository directory (wherever you cloned the installer) and wired up to a `systemd` unit (`ollama-proxy.service`) with sane timeouts, restart policies, and logging.
 - Quick checks run before enabling the service: memory/disk summaries, `dmesg` for OOM/security kills, and a `strace` signal trace to catch policy violations.
 
 ## What to expect afterwards
@@ -32,7 +32,7 @@ Requirements: a Debian/Ubuntu host with `apt`, root privileges, and internet con
   - `journalctl -u ollama-proxy -f`
   - `systemctl stop|start|restart ollama-proxy`
 
-All generated files (binary, `main.go`, analytics DB) reside under `/root/ollama-metrics`.
+All generated files (binary, `main.go`, analytics DB) remain in that same repository folder, so cloning the repo somewhere else changes the installation root.
 
 ## Dashboard preview
 

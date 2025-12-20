@@ -3,7 +3,7 @@
 ################################################################################
 # Clean Ollama Proxy Installation Script for Debian Linux
 # Simple, native Linux implementation
-# Installation directory: /root/ollama-metrics
+# Installation directory: same folder the repo was cloned into
 ################################################################################
 
 set -e

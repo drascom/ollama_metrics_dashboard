@@ -734,7 +734,7 @@
                 }
                 const tokens = `
                 <div class="metric-stack">
-                    <span><strong>${formatNumber(entry.outputTokens || 0)}</strong> out</span>
+                    <span>Out: <strong>${formatNumber(entry.outputTokens || 0)}</strong></span>
                     <span>Prompt: ${formatNumber(entry.inputTokens || entry.promptEvalCount || 0)}</span>
                     <span>Avg rate: ${overallRate}</span>
                 </div>`;
