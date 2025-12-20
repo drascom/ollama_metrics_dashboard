@@ -246,6 +246,7 @@ type responseMetrics struct {
 type ollamaChunk struct {
 	Model              string `json:"model"`
 	Response           string `json:"response"`
+	Message            chatMessage `json:"message"`
 	Done               bool   `json:"done"`
 	TotalDuration      int64  `json:"total_duration"`
 	LoadDuration       int64  `json:"load_duration"`
@@ -253,6 +254,15 @@ type ollamaChunk struct {
 	PromptEvalDuration int64  `json:"prompt_eval_duration"`
 	EvalCount          int    `json:"eval_count"`
 	EvalDuration       int64  `json:"eval_duration"`
+}
+
+type chatMessage struct {
+	Content json.RawMessage `json:"content"`
+}
+
+type chatContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 func init() {
@@ -536,8 +546,8 @@ func parseOllamaResponse(body []byte) *responseMetrics {
 		if chunk.Model != "" {
 			modelName = chunk.Model
 		}
-		if chunk.Response != "" {
-			respBuffer.WriteString(chunk.Response)
+		if text := chunkResponseText(chunk); text != "" {
+			respBuffer.WriteString(text)
 		}
 
 		lastChunk = chunk
@@ -552,8 +562,8 @@ func parseOllamaResponse(body []byte) *responseMetrics {
 		if chunk.Model != "" {
 			modelName = chunk.Model
 		}
-		if chunk.Response != "" {
-			respBuffer.WriteString(chunk.Response)
+		if text := chunkResponseText(chunk); text != "" {
+			respBuffer.WriteString(text)
 		}
 		lastChunk = chunk
 		haveChunk = true
@@ -568,8 +578,8 @@ func parseOllamaResponse(body []byte) *responseMetrics {
 	}
 
 	responseText := respBuffer.String()
-	if responseText == "" && lastChunk.Response != "" {
-		responseText = lastChunk.Response
+	if responseText == "" {
+		responseText = chunkResponseText(lastChunk)
 	}
 
 	return &responseMetrics{
@@ -582,6 +592,53 @@ func parseOllamaResponse(body []byte) *responseMetrics {
 		EvalCount:          lastChunk.EvalCount,
 		EvalDuration:       lastChunk.EvalDuration,
 	}
+}
+
+func chunkResponseText(chunk ollamaChunk) string {
+	if chunk.Response != "" {
+		return chunk.Response
+	}
+	if len(chunk.Message.Content) > 0 {
+		if text := parseChatContent(chunk.Message.Content); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func parseChatContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	var plain string
+	if err := json.Unmarshal(raw, &plain); err == nil && plain != "" {
+		return plain
+	}
+
+	var single chatContent
+	if err := json.Unmarshal(raw, &single); err == nil && single.Text != "" {
+		return single.Text
+	}
+
+	var blocks []chatContent
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		var builder strings.Builder
+		for _, block := range blocks {
+			if block.Text == "" {
+				continue
+			}
+			if builder.Len() > 0 {
+				builder.WriteString(" ")
+			}
+			builder.WriteString(block.Text)
+		}
+		if builder.Len() > 0 {
+			return builder.String()
+		}
+	}
+
+	return ""
 }
 
 func initAnalytics(dbPath string) (*Analytics, error) {

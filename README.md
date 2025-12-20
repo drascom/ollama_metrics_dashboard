@@ -1,6 +1,3 @@
-# Not working at Mac OS yet only debian/ubuntu
-
-
 
 # Clean Ollama Proxy Installer (Linux)
 

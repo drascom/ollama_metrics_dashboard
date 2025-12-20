@@ -451,8 +451,31 @@
         function formatDurationNs(ns) {
             if (!ns || ns <= 0) return '-';
             const seconds = ns / 1e9;
-            if (seconds < 1) return `${(seconds * 1000).toFixed(1)} ms`;
+            if (seconds < 1) return `${(seconds * 1000).toFixed(3)} ms`;
+            if (seconds < 10) return `${seconds.toFixed(3)} s`;
             return `${seconds.toFixed(2)} s`;
+        }
+
+        function tokenRate(count, durationNs) {
+            if (!count || !durationNs) return 0;
+            const seconds = durationNs / 1e9;
+            if (!seconds || seconds <= 0) return 0;
+            return count / seconds;
+        }
+
+        function formatStageMetrics(label, count, durationNs) {
+            const hasTokens = count !== undefined && count !== null && count !== 0;
+            const hasDuration = durationNs && durationNs > 0;
+            if (!hasTokens && !hasDuration) {
+                return `${label}: -`;
+            }
+            const durationLabel = hasDuration ? formatDurationNs(durationNs) : '-';
+            let rateLabel = '-';
+            if (hasTokens && hasDuration) {
+                const rate = tokenRate(count, durationNs);
+                rateLabel = formatNumber(rate || 0, 2) + ' tok/s';
+            }
+            return `${label}: ${formatNumber(count || 0)} tok • ${durationLabel} • ${rateLabel}`;
         }
 
         function parsePrometheus(text) {
@@ -700,18 +723,27 @@
             const model = escapeHTML(entry.model || 'unknown');
             const endpoint = escapeHTML(entry.endpoint || '-');
                 const statusLabel = escapeHTML(entry.status || '-');
+                const latencySeconds = Number(entry.latency || 0);
+                const totalDurationNs = entry.totalDuration || (latencySeconds ? Math.round(latencySeconds * 1e9) : 0);
+                const promptStage = formatStageMetrics('Prompt eval', entry.promptEvalCount, entry.promptEvalDuration);
+                const evalStage = formatStageMetrics('Eval', entry.evalCount || entry.outputTokens, entry.evalDuration);
+                const resolvedRate = entry.tokensPerSec || tokenRate(entry.outputTokens, entry.evalDuration || totalDurationNs);
+                let overallRate = '-';
+                if (entry.outputTokens > 0) {
+                    overallRate = resolvedRate ? formatNumber(resolvedRate, 2) + ' tok/s' : '0 tok/s';
+                }
                 const tokens = `
                 <div class="metric-stack">
                     <span><strong>${formatNumber(entry.outputTokens || 0)}</strong> out</span>
-                    <span>Prompt: ${formatNumber(entry.inputTokens || 0)}</span>
-                    <span>${formatNumber(entry.tokensPerSec || 0, 1)} tok/s</span>
+                    <span>Prompt: ${formatNumber(entry.inputTokens || entry.promptEvalCount || 0)}</span>
+                    <span>Avg rate: ${overallRate}</span>
                 </div>`;
                 const durations = `
                 <div class="metric-stack">
-                    <span>Total: <strong>${formatDurationNs(entry.totalDuration || 0)}</strong></span>
+                    <span>Total: <strong>${formatDurationNs(totalDurationNs)}</strong></span>
                     <span>Load: ${formatDurationNs(entry.loadDuration || 0)}</span>
-                    <span>Prompt: ${formatDurationNs(entry.promptEvalDuration || 0)}</span>
-                    <span>Eval: ${formatDurationNs(entry.evalDuration || 0)}</span>
+                    <span>${promptStage}</span>
+                    <span>${evalStage}</span>
                 </div>`;
                 const responseSnippet = entry.response
                     ? `<div class="response-snippet">${escapeHTML(entry.response)}</div>`
